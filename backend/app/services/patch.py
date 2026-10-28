@@ -12,7 +12,6 @@ Responsibilities:
 
 from __future__ import annotations
 
-import difflib
 import hashlib
 import logging
 import os
@@ -21,11 +20,9 @@ import shutil
 import tempfile
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.models.analysis import Analysis
 from app.models.patch import PatchAttempt
 from app.models.project import Project, ProjectCheckProfile
@@ -122,7 +119,7 @@ def apply_unified_diff(target_dir: str, diff_text: str) -> bool:
             logger.warning("Target file %s does not exist in workspace", full_path)
             return False
 
-        with open(full_path, "r", encoding="utf-8", errors="replace") as f:
+        with open(full_path, encoding="utf-8", errors="replace") as f:
             original_lines = f.readlines()
 
         # Parse hunks and apply
@@ -132,10 +129,9 @@ def apply_unified_diff(target_dir: str, diff_text: str) -> bool:
         current_hunk = []
 
         for line in lines:
-            if line.startswith("@@"):
-                if current_hunk:
-                    hunks.append(current_hunk)
-                    current_hunk = []
+            if line.startswith("@@") and current_hunk:
+                hunks.append(current_hunk)
+                current_hunk = []
             if current_hunk or line.startswith("@@"):
                 current_hunk.append(line)
         if current_hunk:
@@ -227,10 +223,7 @@ def execute_patch_verification(
     if not source_dir:
         # Check standard sample_repo fixture path
         base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "tests", "fixtures", "sample_repo"))
-        if os.path.exists(base_dir):
-            source_dir = base_dir
-        else:
-            source_dir = os.path.abspath(os.getcwd())
+        source_dir = base_dir if os.path.exists(base_dir) else os.path.abspath(os.getcwd())
 
     # Create ephemeral isolated workspace
     with tempfile.TemporaryDirectory(prefix="codesentinel_patch_") as temp_dir:

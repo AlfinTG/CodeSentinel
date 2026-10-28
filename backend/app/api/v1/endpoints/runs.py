@@ -224,12 +224,13 @@ def cancel_run(
 
     Transitions lifecycle status to CANCELLED and test outcome to CANCELLED if pending.
     """
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
+
     from app.models.run import LifecycleStatus, TestOutcome
     from app.services.transitions import (
+        InvalidStateTransitionError,
         transition_lifecycle,
         transition_test_outcome,
-        InvalidStateTransitionError,
     )
 
     request_id = getattr(request.state, "request_id", "req-unknown")
@@ -269,6 +270,6 @@ def cancel_run(
                     "request_id": request_id,
                 }
             },
-        )
+        ) from exc
 
     return RunRead.model_validate(run)

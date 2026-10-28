@@ -2,6 +2,7 @@
 
 import os
 import tempfile
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.orm import Session
@@ -61,7 +62,7 @@ def test_apply_unified_diff_to_temporary_workspace():
         success = apply_unified_diff(tmpdir, diff)
         assert success is True
 
-        with open(test_file, "r", encoding="utf-8") as f:
+        with open(test_file, encoding="utf-8") as f:
             content = f.read()
 
         assert "return x - y" in content

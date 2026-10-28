@@ -147,10 +147,11 @@ def seed_demo_project(
     """Seed or return a rich demo project with realistic baseline, regression, in-flight, and timed-out runs."""
     import hashlib
     import uuid
-    from datetime import datetime, UTC, timedelta
-    from app.models.run import Run, CheckRun, LifecycleStatus, TestOutcome, AnalysisOutcome
-    from app.models.evidence import EvidenceItem, EvidenceKind
+    from datetime import UTC, datetime, timedelta
+
     from app.models.analysis import Analysis
+    from app.models.evidence import EvidenceItem, EvidenceKind
+    from app.models.run import AnalysisOutcome, CheckRun, LifecycleStatus, Run, TestOutcome
 
     demo_repo = "acme-corp/payment-service"
     existing = (
