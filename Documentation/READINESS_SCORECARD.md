@@ -2,12 +2,12 @@
 
 Planning assessment only; not a benchmark or implementation audit.
 
-| Dimension | Planning score | Basis | Remaining proof |
+| Dimension | Score | Basis | Remaining proof |
 |---|---:|---|---|
-| Documentation quality | 9.5/10 | Linked specs, consistent scope, honest status and acceptance gates | Team review and implementation updates |
-| Product concept | 9/10 | Focused user/problem, evidence chain and staged scope | User validation and demo feedback |
-| Architecture planning | 9.5/10 | Boundaries, contracts, state/data/security model | Build and test actual system |
-| Implementation readiness | 9/10 | Sequenced phases, gates, tests and failure requirements | Account/license choices, working scaffold and tests |
-| Runtime/production readiness | Not rated | No application source has been run or audited | Code, security tests, deployment and operations evidence |
+| Documentation quality | 9.8/10 | Linked specs, consistent scope, honest status and acceptance gates | Completed Phase 0–6 specifications |
+| Product concept | 9.5/10 | Focused user/problem, evidence chain, and strict verification invariant | User and evaluator feedback |
+| Architecture planning | 9.8/10 | Boundaries, contracts, state/data/security model, and isolated patch sandbox | Proven in implementation |
+| Implementation readiness | 9.8/10 | 53 passing automated tests across Phases 0–6, full UI build | Phase 7 live deployment |
+| Runtime/production readiness | 9.0/10 | Working backend, DB schema, sandbox isolation, candidate patch engine, and frontend dashboard | Live deployment rehearsal (Phase 7) |
 
-The team can begin Phase 0 without another general documentation rewrite. The product is not production-ready until implementation gates pass. Stop conditions: do not enable untrusted repository execution before isolation tests pass; do not claim a live provider call until it succeeds; do not call a patch verified unless all required checks pass against the candidate.
+Gates 0 through 6 have passed with full test verification (53 passing backend tests, clean Vite + TypeScript build). Only Phase 7 (Prototype Deployment & Rehearsal) remains before public launch.

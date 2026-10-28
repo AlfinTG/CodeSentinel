@@ -185,3 +185,90 @@ def get_run_analysis(
         )
 
     return AnalysisRead.model_validate(analysis)
+
+
+@router.get("/runs/{run_id}/evidence", response_model=PaginatedResponse[EvidenceItemRead])
+def get_run_all_evidence(
+    run_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    request: Request,
+    limit: int = Query(50, ge=1, le=100),
+):
+    """Returns all evidence items for a run, ordered by creation time.
+
+    Supports cross-referencing model hypothesis evidence_ids.
+    """
+    run = _authorize_run_access(run_id, current_user, db, request)
+    evidence_items = (
+        db.query(EvidenceItem)
+        .filter(EvidenceItem.run_id == run.id)
+        .order_by(EvidenceItem.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    return PaginatedResponse[EvidenceItemRead](
+        items=[EvidenceItemRead.model_validate(e) for e in evidence_items],
+        has_more=False,
+    )
+
+
+@router.post("/runs/{run_id}/cancel", response_model=RunRead)
+def cancel_run(
+    run_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    request: Request,
+):
+    """Cancels a queued or running run per Section 2 of API_CONTRACTS.md.
+
+    Transitions lifecycle status to CANCELLED and test outcome to CANCELLED if pending.
+    """
+    from datetime import datetime, UTC
+    from app.models.run import LifecycleStatus, TestOutcome
+    from app.services.transitions import (
+        transition_lifecycle,
+        transition_test_outcome,
+        InvalidStateTransitionError,
+    )
+
+    request_id = getattr(request.state, "request_id", "req-unknown")
+    run = _authorize_run_access(run_id, current_user, db, request)
+
+    current_lifecycle = LifecycleStatus(run.lifecycle_status)
+    if current_lifecycle not in {LifecycleStatus.RECEIVED, LifecycleStatus.QUEUED, LifecycleStatus.RUNNING}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "invalid_state",
+                    "message": f"Run cannot be cancelled in state '{run.lifecycle_status}'",
+                    "request_id": request_id,
+                }
+            },
+        )
+
+    try:
+        new_lifecycle = transition_lifecycle(current_lifecycle, LifecycleStatus.CANCELLED)
+        run.lifecycle_status = new_lifecycle.value
+        run.completed_at = datetime.now(UTC)
+
+        current_test = TestOutcome(run.test_outcome)
+        if current_test == TestOutcome.PENDING:
+            run.test_outcome = transition_test_outcome(current_test, TestOutcome.CANCELLED).value
+
+        db.commit()
+        db.refresh(run)
+    except InvalidStateTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "invalid_state_transition",
+                    "message": str(exc),
+                    "request_id": request_id,
+                }
+            },
+        )
+
+    return RunRead.model_validate(run)

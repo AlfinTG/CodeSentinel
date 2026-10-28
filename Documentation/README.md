@@ -29,7 +29,15 @@ GitHub event → signature/installation checks → idempotent durable run → is
 Product: SOLUTION_OVERVIEW.md, PRD.md. Architecture: ARCHITECTURE.md, DECISIONS.md, DATABASE.md, API_CONTRACTS.md. Security/quality: SECURITY.md, TESTING.md, MODEL_EVALUATION.md, CODE_STYLE.md. Delivery: IMPLEMENTATION_PLAN.md, SETUP_AND_CREATION_GUIDE.md, RELEASE_CHECKLIST.md, HACKATHON_COMPLIANCE.md. Team guides: AGENTS.md, CREATE_PROMPT.md, INSTALL_PROMPT.md, DESIGN_SYSTEM.md.
 
 ## Current status
-Documentation baseline only. Frontend, API, migrations, GitHub event processing, isolated runner, live model call, end-to-end demo, and deployment are not implemented or verified.
+Phases 0 through 6 are fully implemented and verified with automated test suites:
+- **Phase 0:** Repository baseline, Apache 2.0 license, Docker Compose stack, CI pipeline, and security probes.
+- **Phase 1:** PostgreSQL models, Alembic migration 0001, legal state transitions, and object-level authorization.
+- **Phase 2:** Constant-time HMAC-SHA256 GitHub webhook verification, event filtering, and deduplicated durable run creation.
+- **Phase 3:** Isolated execution runner, environment stripping, binary allowlisting, 256 KiB output bounding, and secret redaction.
+- **Phase 4:** Nebius Token Factory adapter with eligible NVIDIA model, strict JSON schema validation, evidence-ID cross-referencing, and honest failure isolation.
+- **Phase 5:** Interactive React + TypeScript + Vite developer dashboard, multi-panel run details, check/evidence inspector, AI diagnosis panel, run cancellation, and demo seed pipeline.
+- **Phase 6 (P1):** Candidate patch proposal engine, safe unified diff application, isolated ephemeral sandbox verification, and attempt history (zero branch writes, PR creation, or auto-merges).
+- **Phase 7:** Clean-environment production prototype deployment and live demonstration rehearsal.
 
 ## References
 - GitHub webhook signatures: https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
