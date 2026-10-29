@@ -68,6 +68,8 @@ class Settings(BaseSettings):
     NEBIUS_MODEL_ID: str = "nvidia/llama-3.1-nemotron-70b-instruct"
     NEBIUS_TIMEOUT_SECONDS: int = 45
     NEBIUS_MAX_RETRIES: int = 2
+    NEBIUS_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = Field(default=3, ge=1, le=50)
+    NEBIUS_CIRCUIT_BREAKER_RECOVERY_SECONDS: int = Field(default=30, ge=1, le=3600)
 
     # Runner limits & Container execution configuration
     # Wall-clock timeout applied to every individual check execution (must be > 0).
