@@ -1,4 +1,13 @@
-"""Session token and OAuth CSRF state cryptographic management."""
+"""Session token and OAuth CSRF state cryptographic management.
+
+Architecture & Session Revocation:
+- Session tokens use symmetric authenticated encryption (Fernet) embedding a unique session_id (UUID),
+  user_id, and creation timestamp.
+- On user logout, revoke_session() registers the session_id with an expiration matching the token TTL.
+- In multi-worker or distributed deployments, REDIS_URL must be configured so session revocations
+  propagate immediately across all worker processes. An in-memory cache is maintained locally
+  for fast evaluation.
+"""
 
 from __future__ import annotations
 
@@ -48,7 +57,7 @@ def revoke_session(session_id: str, ttl: int | None = None) -> None:
             r = redis.from_url(settings.REDIS_URL, socket_connect_timeout=0.2, socket_timeout=0.2)
             r.setex(f"codesentinel:revoked_session:{session_id}", max_ttl, "1")
         except Exception as exc:
-            logger.debug("Redis session revocation recording skipped: %s", exc)
+            logger.warning("Failed to record session revocation in Redis (session_id=%s): %s", session_id, exc)
 
 
 def is_session_revoked(session_id: str) -> bool:
@@ -72,7 +81,7 @@ def is_session_revoked(session_id: str) -> bool:
             if r.exists(f"codesentinel:revoked_session:{session_id}"):
                 return True
         except Exception as exc:
-            logger.debug("Redis session revocation check skipped: %s", exc)
+            logger.warning("Failed to check session revocation in Redis (session_id=%s): %s", session_id, exc)
 
     return False
 
