@@ -197,3 +197,16 @@ export interface PatchAttempt {
   created_at: string
 }
 
+
+export interface User {
+  id: string
+  github_user_id: number
+  login: string
+  display_name?: string | null
+  created_at: string
+}
+
+export interface CurrentUserResponse {
+  user: User
+  authorized_project_count: number
+}

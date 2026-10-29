@@ -43,8 +43,17 @@ class Settings(BaseSettings):
     # Security & Session
     SESSION_SECRET_KEY: str = "development-secret-key-replace-in-production-32-chars-min"
     SESSION_COOKIE_NAME: str = "codesentinel_session"
+    SESSION_MAX_AGE_SECONDS: int = Field(default=604800, gt=0)
     COOKIE_SECURE: bool = False
     COOKIE_SAMESITE: str = "lax"
+    ALLOW_DEMO_DEV_FALLBACK: bool = True
+    GITHUB_OAUTH_STATE_COOKIE_NAME: str = "codesentinel_oauth_state"
+    GITHUB_OAUTH_STATE_MAX_AGE_SECONDS: int = Field(default=600, gt=0)
+    GITHUB_OAUTH_AUTHORIZE_URL: str = "https://github.com/login/oauth/authorize"
+    GITHUB_OAUTH_TOKEN_URL: str = "https://github.com/login/oauth/access_token"
+    GITHUB_OAUTH_USER_URL: str = "https://api.github.com/user"
+    GITHUB_OAUTH_REDIRECT_URI: str = ""
+    FRONTEND_BASE_URL: str = "http://localhost:5173"
 
     # GitHub App
     GITHUB_APP_ID: str = ""
