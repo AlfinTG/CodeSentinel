@@ -197,3 +197,69 @@ async def test_patch_attempt_cross_user_authorization(
     assert resp.status_code == 403
     assert resp.json()["error"]["code"] == "forbidden"
 
+
+def test_validate_patch_diff_windows_backslash_and_unc_rejection():
+    """Verify that backslash traversals, drive letters, UNC paths, and subfolder protected files are rejected."""
+    # 1. Backslash path traversal
+    backslash_traversal = """--- a\\..\\..\\etc\\passwd
++++ b\\..\\..\\etc\\passwd
+@@ -1,1 +1,1 @@
+-root:x:0:0
++hacked:x:0:0
+"""
+    with pytest.raises(PatchSecurityViolationError, match="Path traversal detected"):
+        validate_patch_diff(backslash_traversal)
+
+    # 2. Windows drive letter
+    drive_letter_diff = """--- C:\\Windows\\System32\\cmd.exe
++++ C:\\Windows\\System32\\cmd.exe
+@@ -1,1 +1,1 @@
+-orig
++evil
+"""
+    with pytest.raises(PatchSecurityViolationError, match="Path traversal detected"):
+        validate_patch_diff(drive_letter_diff)
+
+    # 3. UNC path
+    unc_diff = """--- \\\\server\\share\\exploit.py
++++ \\\\server\\share\\exploit.py
+@@ -1,1 +1,1 @@
+-safe
++exploit
+"""
+    with pytest.raises(PatchSecurityViolationError, match="Path traversal detected"):
+        validate_patch_diff(unc_diff)
+
+    # 4. Protected file in subfolder with backslashes
+    sub_env_diff = """--- a\\config\\.env
++++ b\\config\\.env
+@@ -1,1 +1,1 @@
+-KEY=old
++KEY=leaked
+"""
+    with pytest.raises(PatchSecurityViolationError, match="protected file"):
+        validate_patch_diff(sub_env_diff)
+
+
+def test_apply_unified_diff_windows_backslash_safe_application():
+    """Test unified diff application with Windows-style backslashes in header paths."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        test_file = os.path.join(tmpdir, "calculator.py")
+        with open(test_file, "w", encoding="utf-8") as f:
+            f.write("def calculate(x, y):\n    return x + y\n")
+
+        diff = """--- a\\calculator.py
++++ b\\calculator.py
+@@ -1,2 +1,2 @@
+ def calculate(x, y):
+-    return x + y
++    return x * y
+"""
+        success = apply_unified_diff(tmpdir, diff)
+        assert success is True
+
+        with open(test_file, encoding="utf-8") as f:
+            content = f.read()
+
+        assert "return x * y" in content
+
