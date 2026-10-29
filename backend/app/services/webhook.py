@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.delivery import GitHubDelivery
+from app.models.job import Job, JobType
 from app.models.project import Project, ProjectCheckProfile
 from app.models.run import (
     AnalysisOutcome,
@@ -19,6 +20,7 @@ from app.models.run import (
     Run,
     TestOutcome,
 )
+from app.services.queue import enqueue_job
 
 
 @dataclass
@@ -39,6 +41,7 @@ class WebhookResult:
     status_code: int
     duplicate: bool = False
     run_id: str | None = None
+    job_id: str | None = None
     reason: str | None = None
     error_code: str | None = None
 
@@ -160,11 +163,17 @@ def process_github_delivery(
         db.query(GitHubDelivery).filter(GitHubDelivery.delivery_id == delivery_id).first()
     )
     if existing_delivery:
+        existing_job = (
+            db.query(Job).filter(Job.idempotency_key == f"delivery:{delivery_id}").first()
+            if existing_delivery.linked_run_id
+            else None
+        )
         return WebhookResult(
             accepted=True,
             status_code=202,
             duplicate=True,
             run_id=existing_delivery.linked_run_id,
+            job_id=existing_job.id if existing_job else None,
             reason="Duplicate delivery acknowledged",
         )
 
@@ -247,7 +256,7 @@ def process_github_delivery(
     )
     profile_version = active_profile.version if active_profile else 1
 
-    # 8. Transactionally persist delivery and durable run
+    # 8. Transactionally persist delivery, durable run, and queue job
     correlation_id = f"corr-{uuid.uuid4().hex[:12]}"
     run = Run(
         project_id=project.id,
@@ -261,7 +270,7 @@ def process_github_delivery(
         test_outcome=TestOutcome.PENDING.value,
         analysis_outcome=AnalysisOutcome.NOT_REQUESTED.value,
         queued_at=datetime.now(UTC),
-        attempt_number=1,
+        attempt_number=0,
         correlation_id=correlation_id,
     )
     db.add(run)
@@ -277,13 +286,46 @@ def process_github_delivery(
         linked_run_id=run.id,
     )
     db.add(delivery)
-    db.commit()
-    db.refresh(run)
+
+    # Enqueue scan job in the same atomic transaction
+    job = enqueue_job(
+        db=db,
+        project_id=project.id,
+        job_type=JobType.SCAN,
+        run_id=run.id,
+        idempotency_key=f"delivery:{delivery_id}",
+    )
+
+    try:
+        db.commit()
+        db.refresh(run)
+    except Exception:
+        db.rollback()
+        # Recover gracefully if a concurrent request with the same delivery_id committed first
+        existing_delivery = (
+            db.query(GitHubDelivery).filter(GitHubDelivery.delivery_id == delivery_id).first()
+        )
+        if existing_delivery:
+            existing_job = (
+                db.query(Job).filter(Job.idempotency_key == f"delivery:{delivery_id}").first()
+                if existing_delivery.linked_run_id
+                else None
+            )
+            return WebhookResult(
+                accepted=True,
+                status_code=202,
+                duplicate=True,
+                run_id=existing_delivery.linked_run_id,
+                job_id=existing_job.id if existing_job else None,
+                reason="Duplicate delivery acknowledged",
+            )
+        raise
 
     return WebhookResult(
         accepted=True,
         status_code=202,
         duplicate=False,
         run_id=run.id,
+        job_id=job.id,
         reason="Run queued for asynchronous execution",
     )

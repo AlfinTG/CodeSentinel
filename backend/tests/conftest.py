@@ -11,7 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.deps import get_db
 from app.core.config import settings
 from app.main import app
-from app.models.base import Base
+from app.models import Base
 from app.models.user import User
 from app.services.runner import is_container_runtime_available
 

@@ -1,5 +1,7 @@
 """Core configuration settings for CodeSentinel."""
 
+from typing import Literal
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,9 +26,19 @@ class Settings(BaseSettings):
     )
     TEST_DATABASE_URL: str = "sqlite+aiosqlite:///:memory:"
 
-    # Redis
+    # Redis & Queue
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_QUEUE_NAME: str = "codesentinel_jobs"
+    # Supported: "database" (primary durable PostgreSQL/database queue with workers),
+    #            "background" (local fallback using FastAPI in-process BackgroundTasks for analysis)
+    QUEUE_BACKEND: Literal["database", "background"] = "database"
+
+    # Worker configuration
+    WORKER_POLL_INTERVAL_SECONDS: float = Field(default=1.0, gt=0.0, le=3600.0)
+    WORKER_DEFAULT_JOB_TIMEOUT_SECONDS: int = Field(default=300, ge=1, le=86400)
+    WORKER_DEFAULT_MAX_ATTEMPTS: int = Field(default=3, ge=1, le=50)
+    WORKER_DEFAULT_RETRY_DELAY_SECONDS: int = Field(default=5, ge=0, le=3600)
+    WORKER_INTERRUPTED_RECOVERY_INTERVAL_SECONDS: int = Field(default=30, ge=1, le=3600)
 
     # Security & Session
     SESSION_SECRET_KEY: str = "development-secret-key-replace-in-production-32-chars-min"

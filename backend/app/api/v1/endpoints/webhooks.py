@@ -16,6 +16,7 @@ class WebhookResponse(BaseModel):
     accepted: bool
     duplicate: bool = False
     run_id: str | None = None
+    job_id: str | None = None
     reason: str | None = None
 
 
@@ -61,5 +62,6 @@ async def handle_github_webhook(
         accepted=result.accepted,
         duplicate=result.duplicate,
         run_id=result.run_id,
+        job_id=result.job_id,
         reason=result.reason,
     )
