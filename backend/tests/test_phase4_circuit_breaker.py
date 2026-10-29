@@ -159,7 +159,7 @@ def test_circuit_breaker_transitions_to_half_open_after_timeout():
 
 def test_circuit_breaker_half_open_single_probe_concurrency():
     """In HALF_OPEN state, only ONE recovery probe is allowed in flight at a time."""
-    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.05)
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.03)
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
 
@@ -201,7 +201,7 @@ def test_circuit_breaker_half_open_single_probe_concurrency():
 
 def test_circuit_breaker_half_open_failure_retrips_to_open():
     """A failed probe in HALF_OPEN immediately re-trips back to OPEN and clears probe slot."""
-    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.05)
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.03)
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
 
@@ -218,7 +218,7 @@ def test_circuit_breaker_half_open_failure_retrips_to_open():
 
 def test_circuit_breaker_release_probe_unblocks_subsequent_probe():
     """release_probe() clears the probe slot without altering failure counts or state."""
-    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.05)
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.03)
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
 
