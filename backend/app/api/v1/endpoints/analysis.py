@@ -21,14 +21,17 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request,
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.analysis import Analysis
 from app.models.evidence import EvidenceItem
+from app.models.job import JobType
 from app.models.project import Project
 from app.models.run import AnalysisOutcome, Run
 from app.models.user import User
 from app.schemas.analysis import AnalysisRead
 from app.services.analysis import run_analysis
+from app.services.queue import enqueue_job
 
 logger = logging.getLogger(__name__)
 
@@ -159,8 +162,20 @@ def request_analysis(
     run_id_for_log = run.id  # capture before commit expires the object
     analysis = _create_analysis_record(run, db, attempt=attempt)
 
-    # Dispatch to background — response returns immediately
-    background_tasks.add_task(run_analysis, run, analysis, db)
+    if settings.QUEUE_BACKEND == "database":
+        # Queue-backed architecture: Background worker daemon claims and processes exclusively
+        enqueue_job(
+            db=db,
+            project_id=run.project_id,
+            job_type=JobType.ANALYSIS,
+            run_id=run.id,
+            payload={"analysis_id": analysis.id, "attempt": attempt},
+            idempotency_key=f"analysis:{run.id}:{attempt}",
+        )
+        db.commit()
+    else:
+        # Fallback architecture: Dispatches via FastAPI BackgroundTasks if queue is explicitly disabled
+        background_tasks.add_task(run_analysis, run, analysis, db)
 
     logger.info("Analysis queued for run=%s attempt=%d", run_id_for_log, attempt)
     return AnalysisRead.model_validate(analysis)
@@ -219,7 +234,21 @@ def retry_analysis(
     run_id_for_log = run.id  # capture before commit expires the object
     next_attempt = existing.attempt_number + 1
     analysis = _create_analysis_record(run, db, attempt=next_attempt)
-    background_tasks.add_task(run_analysis, run, analysis, db)
+
+    if settings.QUEUE_BACKEND == "database":
+        # Queue-backed architecture: Background worker daemon claims and processes exclusively
+        enqueue_job(
+            db=db,
+            project_id=run.project_id,
+            job_type=JobType.ANALYSIS,
+            run_id=run.id,
+            payload={"analysis_id": analysis.id, "attempt": next_attempt},
+            idempotency_key=f"analysis:{run.id}:{next_attempt}",
+        )
+        db.commit()
+    else:
+        # Fallback architecture: Dispatches via FastAPI BackgroundTasks if queue is explicitly disabled
+        background_tasks.add_task(run_analysis, run, analysis, db)
 
     logger.info("Analysis retry queued for run=%s attempt=%d", run_id_for_log, next_attempt)
     return AnalysisRead.model_validate(analysis)

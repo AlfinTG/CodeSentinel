@@ -1,5 +1,6 @@
 """State transition machine and legal transition validations."""
 
+from app.models.job import JobStatus
 from app.models.run import AnalysisOutcome, LifecycleStatus, TestOutcome
 
 
@@ -13,6 +14,32 @@ class InvalidStateTransitionError(Exception):
         self.from_state = from_state
         self.to_state = to_state
         self.entity_name = entity_name
+
+
+# Legal Job transitions for Phase 2 asynchronous worker jobs
+LEGAL_JOB_TRANSITIONS: dict[JobStatus, set[JobStatus]] = {
+    JobStatus.QUEUED: {
+        JobStatus.RUNNING,
+        JobStatus.CANCELLED,
+        JobStatus.FAILED,
+    },
+    JobStatus.RUNNING: {
+        JobStatus.SUCCEEDED,
+        JobStatus.FAILED,
+        JobStatus.TIMED_OUT,
+        JobStatus.CANCELLED,
+        JobStatus.QUEUED,  # Allowed for bounded retry / crash recovery
+    },
+    # Terminal states
+    JobStatus.SUCCEEDED: set(),
+    JobStatus.FAILED: {
+        JobStatus.QUEUED,  # Manual retry/re-enqueue
+    },
+    JobStatus.TIMED_OUT: {
+        JobStatus.QUEUED,  # Manual retry/re-enqueue
+    },
+    JobStatus.CANCELLED: set(),
+}
 
 
 # Legal Lifecycle transitions
@@ -30,7 +57,9 @@ LEGAL_LIFECYCLE_TRANSITIONS: dict[LifecycleStatus, set[LifecycleStatus]] = {
         LifecycleStatus.FAILED,
     },
     LifecycleStatus.RUNNING: {
+        LifecycleStatus.QUEUED,  # Allowed for bounded transient retry
         LifecycleStatus.COMPLETED,
+        LifecycleStatus.SUCCEEDED,
         LifecycleStatus.FAILED,
         LifecycleStatus.TIMED_OUT,
         LifecycleStatus.CANCELLED,
@@ -38,6 +67,7 @@ LEGAL_LIFECYCLE_TRANSITIONS: dict[LifecycleStatus, set[LifecycleStatus]] = {
     },
     # Terminal states (cannot transition further except idempotent self-assignment)
     LifecycleStatus.COMPLETED: set(),
+    LifecycleStatus.SUCCEEDED: set(),
     LifecycleStatus.FAILED: set(),
     LifecycleStatus.TIMED_OUT: set(),
     LifecycleStatus.CANCELLED: set(),
@@ -88,6 +118,20 @@ LEGAL_ANALYSIS_TRANSITIONS: dict[AnalysisOutcome, set[AnalysisOutcome]] = {
         AnalysisOutcome.QUEUED,
     },
 }
+
+
+def transition_job_status(current: JobStatus, target: JobStatus) -> JobStatus:
+    """Validate and transition durable job status.
+
+    Returns the new state or the current state if idempotent.
+    """
+    if current == target:
+        return current
+
+    allowed = LEGAL_JOB_TRANSITIONS.get(current, set())
+    if target not in allowed:
+        raise InvalidStateTransitionError(current.value, target.value, "Job")
+    return target
 
 
 def transition_lifecycle(current: LifecycleStatus, target: LifecycleStatus) -> LifecycleStatus:
