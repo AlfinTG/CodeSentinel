@@ -46,3 +46,6 @@ pythonpath = ["."]
 norecursedirs = ["fixtures", ".venv", "node_modules"]
 asyncio_mode = "auto"
 addopts = "-v --strict-markers"
+markers = [
+    "live_provider: mark test as requiring live Nebius Token Factory API key",
+]
