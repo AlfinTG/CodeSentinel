@@ -1,5 +1,6 @@
 """Core configuration settings for CodeSentinel."""
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,9 +48,56 @@ class Settings(BaseSettings):
     NEBIUS_TIMEOUT_SECONDS: int = 45
     NEBIUS_MAX_RETRIES: int = 2
 
-    # Runner limits
-    RUNNER_MAX_EXECUTION_TIME_SECONDS: int = 300
-    RUNNER_MAX_OUTPUT_BYTES: int = 262144
+    # Runner limits & Container execution configuration
+    # Wall-clock timeout applied to every individual check execution (must be > 0).
+    RUNNER_MAX_EXECUTION_TIME_SECONDS: int = Field(default=300, gt=0)
+    # Hard cap on bytes captured from stdout+stderr per check before truncation (must be > 0).
+    # Applied during streaming reads so OOM from adversarial output is prevented.
+    RUNNER_MAX_OUTPUT_BYTES: int = Field(default=262144, gt=0)
+    # Maximum number of checks that may run concurrently (advisory; enforced by Phase 2 worker).
+    RUNNER_MAX_CONCURRENT_CHECKS: int = Field(default=4, gt=0)
+    # Container execution runtime: 'docker', 'podman', or 'subprocess' (dev fallback only).
+    RUNNER_CONTAINER_RUNTIME: str = "docker"
+    # Container image used for isolated check execution.
+    RUNNER_CONTAINER_IMAGE: str = "python:3.12-slim"
+    # Container memory limit (e.g. '1g', '512m').
+    RUNNER_CONTAINER_MEMORY_LIMIT: str = "1g"
+    # Container CPU quota in fractional cores (e.g. 1.0 = 1 core).
+    RUNNER_CONTAINER_CPU_LIMIT: float = Field(default=1.0, gt=0.0)
+    # Container PID limit (prevents fork-bombs).
+    RUNNER_CONTAINER_PID_LIMIT: int = Field(default=64, gt=0)
+    # Container tmpfs size for writable /tmp.
+    RUNNER_CONTAINER_TMPFS_SIZE: str = "64m"
+    # Network access for checks: default False (--network none).
+    RUNNER_NETWORK_ENABLED: bool = False
+    # Read-only root filesystem (--read-only).
+    RUNNER_CONTAINER_READ_ONLY_ROOT: bool = True
+    # Container user: UID:GID (non-root).
+    RUNNER_CONTAINER_USER: str = "10001:10001"
+    # Drop all Linux capabilities (--cap-drop=ALL).
+    RUNNER_CONTAINER_CAP_DROP_ALL: bool = True
+    # Security option no-new-privileges.
+    RUNNER_CONTAINER_NO_NEW_PRIVILEGES: bool = True
+    # Fail closed when container execution is required but runtime/daemon unavailable.
+    RUNNER_FAIL_CLOSED_ON_MISSING_RUNTIME: bool = True
+    # Trusted root directory under which all check workspaces must reside.
+    # In production, this must be explicitly configured to prevent arbitrary host mounts.
+    RUNNER_WORKSPACE_ROOT: str = ""
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        if self.CODESENTINEL_ENV == "production":
+            if self.RUNNER_CONTAINER_RUNTIME.lower() == "subprocess":
+                raise ValueError(
+                    "Insecure configuration: RUNNER_CONTAINER_RUNTIME cannot be 'subprocess' in production. "
+                    "Production execution of untrusted code strictly requires a container runtime ('docker' or 'podman')."
+                )
+            if not self.RUNNER_WORKSPACE_ROOT:
+                raise ValueError(
+                    "Insecure configuration: RUNNER_WORKSPACE_ROOT must be explicitly configured in production "
+                    "to enforce strict workspace boundary containment."
+                )
+        return self
 
     @property
     def cors_origins(self) -> list[str]:
