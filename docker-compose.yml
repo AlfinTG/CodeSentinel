@@ -31,14 +31,6 @@ services:
       timeout: 5s
       retries: 5
 
-<<<<<<< HEAD
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: codesentinel-backend
-    restart: unless-stopped
-=======
   api:
     build:
       context: ./backend
@@ -54,40 +46,17 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - API_HOST=0.0.0.0
       - API_PORT=8000
->>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-<<<<<<< HEAD
-    env_file:
-      - .env.production
-    environment:
-      DATABASE_URL: postgresql+psycopg://codesentinel:codesentinel_password@postgres:5432/codesentinel_dev
-      REDIS_URL: redis://redis:6379/0
-      CODESENTINEL_ENV: production
-    ports:
-      - "8000:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health/live')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    container_name: codesentinel-frontend
-    restart: unless-stopped
     depends_on:
-      backend:
+      postgres:
         condition: service_healthy
-    ports:
-      - "5173:80"
-=======
+      redis:
+        condition: service_healthy
 
   worker:
     build:
@@ -106,7 +75,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
->>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: codesentinel-frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "5173:80"
 
 volumes:
   postgres_data:

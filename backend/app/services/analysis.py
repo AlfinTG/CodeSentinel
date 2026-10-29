@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import random
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -32,8 +33,47 @@ from app.models.analysis import Analysis
 from app.models.evidence import EvidenceItem
 from app.models.run import AnalysisOutcome, Run
 from app.schemas.analysis import ModelDiagnosisSchema
+from app.services.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
+
+nebius_circuit_breaker = CircuitBreaker(
+    failure_threshold=settings.NEBIUS_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    recovery_timeout_seconds=settings.NEBIUS_CIRCUIT_BREAKER_RECOVERY_SECONDS,
+    name="nebius_token_factory",
+)
+
+
+class NebiusCallResult(tuple):
+    """3-tuple representation of Nebius call result for backward compatibility.
+
+    Unpacks as (raw_response, latency_ms, token_counts) for existing callers and test mocks.
+    Carries additional fields for error classification:
+      - error_code: str | None ('provider_auth_error', 'provider_invalid_request', 'provider_unavailable')
+      - is_transient: bool (True for timeouts/429/5xx/network errors; False for 400/401/403/404)
+    """
+
+    def __new__(
+        cls,
+        raw_response: dict[str, Any] | None,
+        latency_ms: int,
+        token_counts: dict[str, int],
+        error_code: str | None = None,
+        is_transient: bool = False,
+    ):
+        return super().__new__(cls, (raw_response, latency_ms, token_counts))
+
+    def __init__(
+        self,
+        raw_response: dict[str, Any] | None,
+        latency_ms: int,
+        token_counts: dict[str, int],
+        error_code: str | None = None,
+        is_transient: bool = False,
+    ):
+        self.error_code = error_code
+        self.is_transient = is_transient
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Prompt construction limits
@@ -94,6 +134,7 @@ def run_analysis(run: Run, analysis: Analysis, db: Session) -> None:
     try:
         _do_analysis(run, analysis, db)
     except Exception as exc:  # noqa: BLE001
+        nebius_circuit_breaker.release_probe()
         logger.exception("Unexpected error in run_analysis for run=%s", run.id)
         _mark_failed(analysis, db, safe_error_code="internal_error", exc=exc)
 
@@ -130,16 +171,48 @@ def _do_analysis(run: Run, analysis: Analysis, db: Session) -> None:
     run.analysis_outcome = AnalysisOutcome.RUNNING.value
     db.commit()
 
-    # 5. Call the model
-    raw_response, latency_ms, token_counts = _call_nebius(user_prompt)
-
-    analysis.latency_ms = latency_ms
-    analysis.input_tokens = token_counts.get("prompt_tokens")
-    analysis.output_tokens = token_counts.get("completion_tokens")
-
-    if raw_response is None:
-        _mark_failed(analysis, db, safe_error_code="provider_unavailable")
+    # 5. Check circuit breaker before contacting model provider
+    if not nebius_circuit_breaker.can_execute():
+        logger.warning(
+            "Nebius circuit breaker is OPEN or probe in-flight for run=%s — fast-failing analysis without calling provider",
+            run.id,
+        )
+        _mark_failed(analysis, db, safe_error_code="circuit_breaker_open")
         return
+
+    # Call the model
+    try:
+        call_result = _call_nebius(user_prompt)
+        raw_response = call_result[0]
+        latency_ms = call_result[1]
+        token_counts = call_result[2]
+        error_code = getattr(call_result, "error_code", None) or "provider_unavailable"
+        is_transient = getattr(
+            call_result,
+            "is_transient",
+            raw_response is None,
+        )
+
+        analysis.latency_ms = latency_ms
+        analysis.input_tokens = token_counts.get("prompt_tokens")
+        analysis.output_tokens = token_counts.get("completion_tokens")
+
+        if raw_response is None:
+            if is_transient:
+                nebius_circuit_breaker.record_failure()
+            else:
+                # Permanent failure (e.g. 401 auth or 400 invalid request)
+                # Release probe slot without incrementing transient failure count
+                nebius_circuit_breaker.release_probe()
+            _mark_failed(analysis, db, safe_error_code=error_code)
+            return
+
+        nebius_circuit_breaker.record_success()
+
+    except Exception:
+        # In case of any unexpected exception during call or processing, release probe
+        nebius_circuit_breaker.release_probe()
+        raise
 
     # 6. Parse and validate the structured schema
     valid_evidence_ids = {str(e.id) for e in evidence_items}
@@ -201,17 +274,40 @@ def _build_prompt(run: Run, items: list[EvidenceItem]) -> str:
     return prompt
 
 
+def _backoff_sleep(seconds: float) -> None:
+    """Sleep helper for exponential backoff, isolated for deterministic testing."""
+    time.sleep(seconds)
+
+
+def _compute_backoff_delay(attempt: int, resp: httpx.Response | None = None) -> float:
+    """Calculate bounded exponential backoff with jitter, respecting Retry-After on 429."""
+    if resp is not None and resp.status_code == 429:
+        retry_after = resp.headers.get("Retry-After")
+        if retry_after:
+            try:
+                parsed = float(retry_after.strip())
+                if 0.0 <= parsed <= 10.0:  # strictly bounded
+                    return parsed
+            except ValueError:
+                pass
+    base_delay = min(0.5 * (2 ** attempt), 4.0)
+    jitter = random.uniform(0.05, 0.25)
+    return min(base_delay + jitter, 5.0)
+
+
 def _call_nebius(
     user_prompt: str,
-) -> tuple[dict[str, Any] | None, int, dict[str, int]]:
+) -> NebiusCallResult:
     """Call the Nebius Token Factory OpenAI-compatible endpoint.
 
-    Returns (parsed_json_or_None, latency_ms, token_counts).
-    Never raises — all network/parse errors are caught and logged safely.
+    Returns NebiusCallResult (unpacks as (parsed_json_or_None, latency_ms, token_counts)).
+    Never raises — all network/parse/HTTP errors are caught and classified safely.
+    Permanent 4xx errors are not retried. Transient 429/5xx/network errors are retried
+    with bounded backoff and jitter.
     """
     if not settings.NEBIUS_TOKEN_FACTORY_API_KEY:
         logger.warning("NEBIUS_TOKEN_FACTORY_API_KEY not set — skipping live call")
-        return None, 0, {}
+        return NebiusCallResult(None, 0, {}, error_code="provider_unavailable", is_transient=False)
 
     url = f"{settings.NEBIUS_TOKEN_FACTORY_BASE_URL}/chat/completions"
     payload = {
@@ -226,6 +322,9 @@ def _call_nebius(
     }
 
     last_exc: Exception | None = None
+    last_status: int | None = None
+    total_latency_ms = 0
+
     for attempt in range(settings.NEBIUS_MAX_RETRIES + 1):
         t0 = time.monotonic()
         try:
@@ -238,19 +337,67 @@ def _call_nebius(
                     },
                     json=payload,
                 )
-            latency_ms = int((time.monotonic() - t0) * 1000)
+            call_latency = int((time.monotonic() - t0) * 1000)
+            total_latency_ms += call_latency
 
+            # Check for rate limiting (transient)
             if resp.status_code == 429:
-                logger.warning("Nebius rate limit hit (attempt %d)", attempt + 1)
-                last_exc = Exception("rate_limit")
-                continue
-
-            if resp.status_code >= 500:
+                last_status = 429
+                last_exc = Exception("rate_limit_429")
                 logger.warning(
-                    "Nebius server error %d (attempt %d)", resp.status_code, attempt + 1
+                    "Nebius rate limit 429 on attempt %d of %d",
+                    attempt + 1,
+                    settings.NEBIUS_MAX_RETRIES + 1,
                 )
+                if attempt < settings.NEBIUS_MAX_RETRIES:
+                    delay = _compute_backoff_delay(attempt, resp)
+                    _backoff_sleep(delay)
+                    continue
+                break
+
+            # Check for server errors (transient)
+            if resp.status_code >= 500:
+                last_status = resp.status_code
                 last_exc = Exception(f"server_error_{resp.status_code}")
-                continue
+                logger.warning(
+                    "Nebius server error %d on attempt %d of %d",
+                    resp.status_code,
+                    attempt + 1,
+                    settings.NEBIUS_MAX_RETRIES + 1,
+                )
+                if attempt < settings.NEBIUS_MAX_RETRIES:
+                    delay = _compute_backoff_delay(attempt, resp)
+                    _backoff_sleep(delay)
+                    continue
+                break
+
+            # Check for permanent client errors (4xx other than 429)
+            if 400 <= resp.status_code < 500:
+                last_status = resp.status_code
+                if resp.status_code in (401, 403):
+                    error_code = "provider_auth_error"
+                    logger.warning(
+                        "Nebius authentication failure (HTTP %d). Permanent error; not retrying.",
+                        resp.status_code,
+                    )
+                elif resp.status_code == 404:
+                    error_code = "provider_model_not_found"
+                    logger.warning(
+                        "Nebius model not found (HTTP 404). Permanent error; not retrying."
+                    )
+                else:
+                    error_code = "provider_invalid_request"
+                    logger.warning(
+                        "Nebius request error (HTTP %d). Permanent error; not retrying.",
+                        resp.status_code,
+                    )
+                return NebiusCallResult(
+                    None,
+                    total_latency_ms,
+                    {},
+                    error_code=error_code,
+                    is_transient=False,
+                )
 
             resp.raise_for_status()
 
@@ -258,22 +405,72 @@ def _call_nebius(
             content_str = data["choices"][0]["message"]["content"]
             parsed = json.loads(content_str)
             token_counts = data.get("usage", {})
-            return parsed, latency_ms, token_counts
+            return NebiusCallResult(parsed, call_latency, token_counts, error_code=None, is_transient=False)
 
         except (httpx.TimeoutException, httpx.NetworkError) as exc:
-            latency_ms = int((time.monotonic() - t0) * 1000)
-            # IMPORTANT: never log the api key or any part of the response that might contain it
+            call_latency = int((time.monotonic() - t0) * 1000)
+            total_latency_ms += call_latency
             logger.warning(
-                "Nebius network error on attempt %d: %s", attempt + 1, type(exc).__name__
+                "Nebius network error on attempt %d: %s",
+                attempt + 1,
+                type(exc).__name__,
             )
             last_exc = exc
+            if attempt < settings.NEBIUS_MAX_RETRIES:
+                delay = _compute_backoff_delay(attempt)
+                _backoff_sleep(delay)
+                continue
+
+        except httpx.HTTPStatusError as exc:
+            call_latency = int((time.monotonic() - t0) * 1000)
+            total_latency_ms += call_latency
+            status_code = exc.response.status_code if exc.response is not None else 0
+            logger.warning(
+                "Nebius HTTP status error on attempt %d: %d",
+                attempt + 1,
+                status_code,
+            )
+            last_status = status_code
+            last_exc = exc
+            if 400 <= status_code < 500 and status_code != 429:
+                err_code = "provider_auth_error" if status_code in (401, 403) else "provider_invalid_request"
+                return NebiusCallResult(
+                    None,
+                    total_latency_ms,
+                    {},
+                    error_code=err_code,
+                    is_transient=False,
+                )
+            if attempt < settings.NEBIUS_MAX_RETRIES:
+                delay = _compute_backoff_delay(attempt, exc.response)
+                _backoff_sleep(delay)
+                continue
+
         except (KeyError, json.JSONDecodeError, ValueError) as exc:
+            call_latency = int((time.monotonic() - t0) * 1000)
+            total_latency_ms += call_latency
             logger.warning("Nebius response parse error on attempt %d: %s", attempt + 1, exc)
             last_exc = exc
-            break  # malformed response — no point retrying
+            return NebiusCallResult(
+                None,
+                total_latency_ms,
+                {},
+                error_code="invalid_model_response",
+                is_transient=False,
+            )
 
-    logger.error("All Nebius attempts exhausted. Last error: %s", type(last_exc).__name__ if last_exc else "unknown")
-    return None, 0, {}
+    logger.error(
+        "All Nebius attempts exhausted. Last status: %s, last error: %s",
+        last_status,
+        type(last_exc).__name__ if last_exc else "unknown",
+    )
+    return NebiusCallResult(
+        None,
+        total_latency_ms,
+        {},
+        error_code="provider_unavailable",
+        is_transient=True,
+    )
 
 
 def _parse_and_validate(

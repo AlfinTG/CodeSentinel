@@ -303,6 +303,7 @@ def cancel_run(
             },
         )
 
+    # Cancel any active or queued jobs associated with this run
     active_jobs = (
         db.query(Job)
         .filter(
@@ -341,6 +342,7 @@ def cancel_run(
         ) from exc
 
     return {
+        "id": run.id,
         "run_id": run.id,
         "lifecycle_status": run.lifecycle_status,
         "test_outcome": run.test_outcome,
