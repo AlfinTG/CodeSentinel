@@ -34,14 +34,11 @@ from app.services.queue import (
     claim_next_job,
     complete_job,
     enqueue_job,
-    fail_job,
     recover_interrupted_jobs,
-    timeout_job,
 )
 from app.services.runner_adapter import ExecutionResultSummary
 from app.services.transitions import InvalidStateTransitionError, transition_job_status
 from app.worker.worker import Worker
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Fixtures and Test Doubles
@@ -587,6 +584,7 @@ async def test_webhook_creates_durable_job(
     import hashlib
     import hmac
     import json
+
     from app.core.config import settings
 
     delivery_id = str(uuid.uuid4())

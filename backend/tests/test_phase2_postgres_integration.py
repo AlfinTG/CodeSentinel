@@ -28,7 +28,7 @@ from sqlalchemy.pool import NullPool
 from app.models import Base
 from app.models.job import Job, JobStatus, JobType
 from app.models.project import Project, ProjectCheckProfile
-from app.models.run import AnalysisOutcome, LifecycleStatus, Run, TestOutcome
+from app.models.run import LifecycleStatus, Run, TestOutcome
 from app.models.user import User
 from app.services.queue import (
     cancel_job,
@@ -382,7 +382,7 @@ def test_pg_for_update_skip_locked_exclusive_claiming(
     )
 
     # Verify distribution across workers (at least 2 workers got jobs)
-    workers_with_jobs = set(wid for wid, _ in claimed_results)
+    workers_with_jobs = {wid for wid, _ in claimed_results}
     assert len(workers_with_jobs) >= 2, (
         f"Jobs should be distributed across workers, but only {workers_with_jobs} got any"
     )
@@ -448,7 +448,7 @@ def test_pg_cancel_during_execution_preserves_cancelled_state(
     pg_session, pg_session_factory, pg_project, pg_run
 ):
     """Verify that cancellation during worker execution is respected."""
-    job = enqueue_job(
+    enqueue_job(
         db=pg_session,
         project_id=pg_project.id,
         run_id=pg_run.id,
@@ -710,7 +710,7 @@ def test_pg_transaction_rollback_on_error(pg_session, pg_project):
 
 def test_pg_timeout_job(pg_session, pg_project, pg_run):
     """Verify timeout_job works correctly on PostgreSQL."""
-    job = enqueue_job(
+    enqueue_job(
         db=pg_session,
         project_id=pg_project.id,
         run_id=pg_run.id,
@@ -730,4 +730,3 @@ def test_pg_timeout_job(pg_session, pg_project, pg_run):
     # Run should reflect timeout
     pg_session.refresh(pg_run)
     assert pg_run.lifecycle_status == LifecycleStatus.TIMED_OUT.value
-

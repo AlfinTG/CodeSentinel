@@ -12,7 +12,7 @@ from app.models.analysis import Analysis
 from app.models.evidence import EvidenceItem
 from app.models.job import Job, JobStatus, JobType
 from app.models.project import Project
-from app.models.run import CheckRun, LifecycleStatus, Run
+from app.models.run import CheckRun, LifecycleStatus, Run, TestOutcome
 from app.models.user import User
 from app.schemas.analysis import AnalysisRead
 from app.schemas.common import PaginatedResponse
@@ -20,6 +20,11 @@ from app.schemas.evidence import EvidenceItemRead
 from app.schemas.job import JobRead
 from app.schemas.run import CheckRunRead, RunDetail, RunRead
 from app.services.queue import cancel_job, enqueue_job
+from app.services.transitions import (
+    InvalidStateTransitionError,
+    transition_lifecycle,
+    transition_test_outcome,
+)
 
 router = APIRouter(tags=["Runs & Evidence"])
 
@@ -191,18 +196,12 @@ def get_run_analysis(
     return AnalysisRead.model_validate(analysis)
 
 
-<<<<<<< HEAD
 @router.get("/runs/{run_id}/evidence", response_model=PaginatedResponse[EvidenceItemRead])
 def get_run_all_evidence(
-=======
-@router.get("/runs/{run_id}/job", response_model=JobRead)
-def get_run_job(
->>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
     run_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     request: Request,
-<<<<<<< HEAD
     limit: int = Query(50, ge=1, le=100),
 ):
     """Returns all evidence items for a run, ordered by creation time.
@@ -223,8 +222,12 @@ def get_run_job(
     )
 
 
-@router.post("/runs/{run_id}/cancel", response_model=RunRead)
-=======
+@router.get("/runs/{run_id}/job", response_model=JobRead)
+def get_run_job(
+    run_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    request: Request,
 ):
     """Returns the latest queue job associated with this run."""
     request_id = getattr(request.state, "request_id", "req-unknown")
@@ -273,81 +276,33 @@ def enqueue_run_job(
 
 
 @router.post("/runs/{run_id}/cancel")
->>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
 def cancel_run(
     run_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     request: Request,
 ):
-<<<<<<< HEAD
-    """Cancels a queued or running run per Section 2 of API_CONTRACTS.md.
-
-    Transitions lifecycle status to CANCELLED and test outcome to CANCELLED if pending.
-    """
-    from datetime import UTC, datetime
-
-    from app.models.run import LifecycleStatus, TestOutcome
-    from app.services.transitions import (
-        InvalidStateTransitionError,
-        transition_lifecycle,
-        transition_test_outcome,
-    )
-
-    request_id = getattr(request.state, "request_id", "req-unknown")
-    run = _authorize_run_access(run_id, current_user, db, request)
-
-    current_lifecycle = LifecycleStatus(run.lifecycle_status)
-    if current_lifecycle not in {LifecycleStatus.RECEIVED, LifecycleStatus.QUEUED, LifecycleStatus.RUNNING}:
-=======
     """Cancel a queued or running run and its associated queue job per API_CONTRACTS.md."""
     request_id = getattr(request.state, "request_id", "req-unknown")
     run = _authorize_run_access(run_id, current_user, db, request)
 
-    if run.lifecycle_status not in (LifecycleStatus.QUEUED.value, LifecycleStatus.RUNNING.value):
->>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
+    current_lifecycle = LifecycleStatus(run.lifecycle_status)
+    if current_lifecycle not in {
+        LifecycleStatus.RECEIVED,
+        LifecycleStatus.QUEUED,
+        LifecycleStatus.RUNNING,
+    }:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "error": {
-<<<<<<< HEAD
                     "code": "invalid_state",
-=======
-                    "code": "invalid_transition",
->>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
                     "message": f"Run cannot be cancelled in state '{run.lifecycle_status}'",
                     "request_id": request_id,
                 }
             },
         )
 
-<<<<<<< HEAD
-    try:
-        new_lifecycle = transition_lifecycle(current_lifecycle, LifecycleStatus.CANCELLED)
-        run.lifecycle_status = new_lifecycle.value
-        run.completed_at = datetime.now(UTC)
-
-        current_test = TestOutcome(run.test_outcome)
-        if current_test == TestOutcome.PENDING:
-            run.test_outcome = transition_test_outcome(current_test, TestOutcome.CANCELLED).value
-
-        db.commit()
-        db.refresh(run)
-    except InvalidStateTransitionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "error": {
-                    "code": "invalid_state_transition",
-                    "message": str(exc),
-                    "request_id": request_id,
-                }
-            },
-        ) from exc
-
-    return RunRead.model_validate(run)
-=======
-    # Cancel any active or queued jobs associated with this run
     active_jobs = (
         db.query(Job)
         .filter(
@@ -356,17 +311,38 @@ def cancel_run(
         )
         .all()
     )
-    for j in active_jobs:
-        cancel_job(db, j.id)
+    for job in active_jobs:
+        cancel_job(db, job.id)
 
-    run.lifecycle_status = LifecycleStatus.CANCELLED.value
-    run.completed_at = datetime.now(UTC)
-    db.commit()
-    db.refresh(run)
+    try:
+        run.lifecycle_status = transition_lifecycle(
+            current_lifecycle, LifecycleStatus.CANCELLED
+        ).value
+        run.completed_at = datetime.now(UTC)
+
+        current_test = TestOutcome(run.test_outcome)
+        if current_test == TestOutcome.PENDING:
+            run.test_outcome = transition_test_outcome(
+                current_test, TestOutcome.CANCELLED
+            ).value
+
+        db.commit()
+        db.refresh(run)
+    except InvalidStateTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "invalid_transition",
+                    "message": "Run cannot be cancelled in its current state",
+                    "request_id": request_id,
+                }
+            },
+        ) from exc
 
     return {
         "run_id": run.id,
         "lifecycle_status": run.lifecycle_status,
+        "test_outcome": run.test_outcome,
         "message": "Run cancelled successfully",
     }
->>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
