@@ -20,6 +20,11 @@ from app.schemas.evidence import EvidenceItemRead
 from app.schemas.job import JobRead
 from app.schemas.run import CheckRunRead, RunDetail, RunRead
 from app.services.queue import cancel_job, enqueue_job
+from app.services.transitions import (
+    InvalidStateTransitionError,
+    transition_lifecycle,
+    transition_test_outcome,
+)
 
 router = APIRouter(tags=["Runs & Evidence"])
 
@@ -281,11 +286,12 @@ def cancel_run(
     request_id = getattr(request.state, "request_id", "req-unknown")
     run = _authorize_run_access(run_id, current_user, db, request)
 
-    if run.lifecycle_status not in (
-        LifecycleStatus.RECEIVED.value,
-        LifecycleStatus.QUEUED.value,
-        LifecycleStatus.RUNNING.value,
-    ):
+    current_lifecycle = LifecycleStatus(run.lifecycle_status)
+    if current_lifecycle not in {
+        LifecycleStatus.RECEIVED,
+        LifecycleStatus.QUEUED,
+        LifecycleStatus.RUNNING,
+    }:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
@@ -306,17 +312,34 @@ def cancel_run(
         )
         .all()
     )
-    for j in active_jobs:
-        cancel_job(db, j.id)
+    for job in active_jobs:
+        cancel_job(db, job.id)
 
-    run.lifecycle_status = LifecycleStatus.CANCELLED.value
-    run.completed_at = datetime.now(UTC)
+    try:
+        run.lifecycle_status = transition_lifecycle(
+            current_lifecycle, LifecycleStatus.CANCELLED
+        ).value
+        run.completed_at = datetime.now(UTC)
 
-    if run.test_outcome == TestOutcome.PENDING.value:
-        run.test_outcome = TestOutcome.CANCELLED.value
+        current_test = TestOutcome(run.test_outcome)
+        if current_test == TestOutcome.PENDING:
+            run.test_outcome = transition_test_outcome(
+                current_test, TestOutcome.CANCELLED
+            ).value
 
-    db.commit()
-    db.refresh(run)
+        db.commit()
+        db.refresh(run)
+    except InvalidStateTransitionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": {
+                    "code": "invalid_transition",
+                    "message": "Run cannot be cancelled in its current state",
+                    "request_id": request_id,
+                }
+            },
+        ) from exc
 
     return {
         "id": run.id,

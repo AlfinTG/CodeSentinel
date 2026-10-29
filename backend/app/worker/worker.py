@@ -7,20 +7,17 @@ test and analysis execution isolated from HTTP request lifecycles.
 from __future__ import annotations
 
 import logging
-import signal
 import threading
 import time
 import uuid
 from collections.abc import Callable
-from datetime import UTC, datetime
-from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.analysis import Analysis
-from app.models.job import JobStatus, JobType
+from app.models.job import JobType
 from app.models.run import Run, TestOutcome
 from app.services.queue import (
     claim_next_job,

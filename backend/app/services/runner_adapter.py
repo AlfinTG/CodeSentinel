@@ -11,7 +11,7 @@ import logging
 import os
 import tempfile
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 from sqlalchemy.orm import Session
 

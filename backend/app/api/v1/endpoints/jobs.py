@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_authorized_project, get_current_user
 from app.db.session import get_db
-from app.models.job import Job, JobType
+from app.models.job import Job
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.job import JobCancelResponse, JobCreateRequest, JobDetail, JobRead
@@ -91,7 +91,7 @@ def cancel_job_endpoint(
                     "request_id": request_id,
                 }
             },
-        )
+        ) from exc
 
 
 @router.post(

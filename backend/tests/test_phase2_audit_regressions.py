@@ -11,7 +11,6 @@ from httpx import AsyncClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.main import app
 from app.models.analysis import Analysis
 from app.models.job import Job, JobStatus, JobType
 from app.models.project import Project, ProjectCheckProfile
@@ -25,7 +24,6 @@ from app.services.queue import (
     fail_job,
     recover_interrupted_jobs,
 )
-from app.services.runner_adapter import ExecutionResultSummary
 from app.worker.worker import Worker
 
 
@@ -85,7 +83,7 @@ def test_job_cancelled_during_worker_execution_does_not_crash_or_overwrite_statu
 
     must not crash with InvalidStateTransitionError and must not overwrite CANCELLED status.
     """
-    job = enqueue_job(
+    enqueue_job(
         db,
         project_id=audit_project.id,
         run_id=audit_run.id,
@@ -399,6 +397,7 @@ def test_worker_run_loop_survives_transient_database_error(session_factory):
 def test_worker_config_validation_boundaries():
     """Defect 11 & Task 1: Pydantic settings validates worker bounds and restricts QUEUE_BACKEND to genuinely implemented options."""
     from pydantic import ValidationError
+
     from app.core.config import Settings
 
     with pytest.raises(ValidationError):
@@ -436,6 +435,7 @@ async def test_concurrent_webhook_delivery_recovers_gracefully(
     import hashlib
     import hmac
     import json
+
     from app.core.config import settings
 
     delivery_id = str(uuid.uuid4())
@@ -585,13 +585,15 @@ async def test_analysis_request_fallback_in_background_mode(
     db.commit()
 
     run_analysis_mock = MagicMock()
-    with patch("app.api.v1.endpoints.analysis.settings.QUEUE_BACKEND", "background"):
-        with patch("app.api.v1.endpoints.analysis.run_analysis", run_analysis_mock):
-            resp = await client.post(
-                f"/api/v1/runs/{audit_run.id}/analysis/request",
-                headers={"x-test-user-id": user_alice.id},
-            )
-            assert resp.status_code == 202
+    with (
+        patch("app.api.v1.endpoints.analysis.settings.QUEUE_BACKEND", "background"),
+        patch("app.api.v1.endpoints.analysis.run_analysis", run_analysis_mock),
+    ):
+        resp = await client.post(
+            f"/api/v1/runs/{audit_run.id}/analysis/request",
+            headers={"x-test-user-id": user_alice.id},
+        )
+        assert resp.status_code == 202
 
     # In fallback mode, no durable queue job was created
     db.expire_all()

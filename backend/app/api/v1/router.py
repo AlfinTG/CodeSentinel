@@ -2,7 +2,16 @@
 
 from fastapi import APIRouter
 
-from app.api.v1.endpoints import analysis, auth, health, jobs, patches, projects, runs, webhooks
+from app.api.v1.endpoints import (
+    analysis,
+    auth,
+    health,
+    jobs,
+    patches,
+    projects,
+    runs,
+    webhooks,
+)
 
 api_v1_router = APIRouter(prefix="/api/v1")
 
@@ -13,5 +22,5 @@ api_v1_router.include_router(projects.router)
 api_v1_router.include_router(runs.router)
 api_v1_router.include_router(webhooks.router)
 api_v1_router.include_router(analysis.router)
-api_v1_router.include_router(jobs.router)
 api_v1_router.include_router(patches.router)
+api_v1_router.include_router(jobs.router)
