@@ -107,6 +107,25 @@ class Settings(BaseSettings):
     # In production, this must be explicitly configured to prevent arbitrary host mounts.
     RUNNER_WORKSPACE_ROOT: str = ""
 
+    # Secret Management & KMS Integration (Phase 5)
+    SECRET_PROVIDER: Literal[
+        "env",
+        "memory",
+        "aws_secrets_manager",
+        "gcp_secret_manager",
+        "vault",
+    ] = "env"
+    SECRET_MANAGER_SECRET_ID: str = ""
+    VAULT_ADDR: str = ""
+    VAULT_TOKEN: str = ""
+    KMS_KEY_ID: str = ""
+
+    def initialize_secrets(self, provider: object | None = None) -> dict[str, str]:
+        """Resolve secrets dynamically from the configured KMS/Secret provider."""
+        from app.core.secrets import resolve_and_inject_secrets
+
+        return resolve_and_inject_secrets(self, provider=provider)  # type: ignore[arg-type]
+
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
         if self.CODESENTINEL_ENV == "production":
@@ -119,6 +138,19 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "Insecure configuration: RUNNER_WORKSPACE_ROOT must be explicitly configured in production "
                     "to enforce strict workspace boundary containment."
+                )
+            if (
+                self.SESSION_SECRET_KEY
+                == "development-secret-key-replace-in-production-32-chars-min"
+                or len(self.SESSION_SECRET_KEY) < 32
+            ):
+                raise ValueError(
+                    "Insecure configuration: SESSION_SECRET_KEY must not use default development value and "
+                    "must be at least 32 characters in production."
+                )
+            if self.GITHUB_WEBHOOK_SECRET == "development-webhook-secret":
+                raise ValueError(
+                    "Insecure configuration: GITHUB_WEBHOOK_SECRET must not use default development value in production."
                 )
         return self
 
