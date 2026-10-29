@@ -20,6 +20,7 @@ import { api } from './services/api'
 import { Navbar } from './components/Navbar'
 import { RunList } from './components/RunList'
 import { RunDetailView } from './components/RunDetailView'
+import { useRunEvents } from './hooks/useRunEvents'
 
 export default function App() {
   // Global & System state
@@ -147,7 +148,62 @@ export default function App() {
     }
   }, [selectedRunId, loadRunDetail])
 
-  // 4. Seed demo handler
+  // 4. Real-time Telemetry Streaming via Server-Sent Events (SSE - Phase 7)
+  const { isConnected, isStreaming } = useRunEvents(selectedRunId, {
+    enabled: !!selectedRunId,
+    onUpdate: (snapshot) => {
+      setActiveRun((prev) => {
+        if (!prev || prev.id !== snapshot.run_id) return prev
+        return {
+          ...prev,
+          lifecycle_status: snapshot.lifecycle_status as any,
+          test_outcome: snapshot.test_outcome as any,
+          analysis_outcome: snapshot.analysis_outcome as any,
+          started_at: snapshot.started_at,
+          completed_at: snapshot.completed_at,
+        }
+      })
+      setRuns((prev) =>
+        prev.map((r) =>
+          r.id === snapshot.run_id
+            ? {
+                ...r,
+                lifecycle_status: snapshot.lifecycle_status as any,
+                test_outcome: snapshot.test_outcome as any,
+                analysis_outcome: snapshot.analysis_outcome as any,
+              }
+            : r
+        )
+      )
+      if (snapshot.checks && snapshot.checks.length > 0) {
+        api.getRunChecks(snapshot.run_id).then(setActiveChecks).catch(console.error)
+      }
+      if (snapshot.analysis?.has_result) {
+        api.getRunAnalysis(snapshot.run_id).then(setActiveAnalysis).catch(console.error)
+      }
+    },
+    onComplete: () => {
+      if (selectedRunId) {
+        loadRunDetail(selectedRunId)
+        if (selectedProjectId) {
+          api.getProjectRuns(selectedProjectId).then((res) => setRuns(res.items)).catch(console.error)
+        }
+      }
+    },
+  })
+
+  // Keyboard navigation shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setBannerNotice(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
+  // 5. Seed demo handler
   const handleSeedDemo = async () => {
     setSeeding(true)
     try {
@@ -165,7 +221,7 @@ export default function App() {
     }
   }
 
-  // 5. Trigger Analysis handler
+  // 6. Trigger Analysis handler
   const handleRequestAnalysis = async () => {
     if (!activeRun) return
     setTriggeringAnalysis(true)
@@ -173,14 +229,13 @@ export default function App() {
       const res = await api.requestAnalysis(activeRun.id)
       setActiveAnalysis(res)
       setBannerNotice({
-        message: 'AI diagnosis requested from Nebius Token Factory NVIDIA model. Running in background...',
+        message: 'AI diagnosis requested from Nebius Token Factory NVIDIA model. Streaming updates in real-time...',
         type: 'info',
       })
-      // Refresh run to update analysis_outcome
       setTimeout(() => {
         if (selectedProjectId) loadRuns(selectedProjectId)
         loadRunDetail(activeRun.id)
-      }, 1200)
+      }, 1000)
     } catch (err: any) {
       setBannerNotice({ message: `Analysis request error: ${err.message}`, type: 'error' })
     } finally {
@@ -188,7 +243,7 @@ export default function App() {
     }
   }
 
-  // 6. Retry Analysis handler
+  // 7. Retry Analysis handler
   const handleRetryAnalysis = async () => {
     if (!activeRun) return
     setTriggeringAnalysis(true)
@@ -202,7 +257,7 @@ export default function App() {
       setTimeout(() => {
         if (selectedProjectId) loadRuns(selectedProjectId)
         loadRunDetail(activeRun.id)
-      }, 1200)
+      }, 1000)
     } catch (err: any) {
       setBannerNotice({ message: `Retry error: ${err.message}`, type: 'error' })
     } finally {
@@ -210,7 +265,7 @@ export default function App() {
     }
   }
 
-  // 7. Cancel Run handler
+  // 8. Cancel Run handler
   const handleCancelRun = async () => {
     if (!activeRun) return
     setCancellingRun(true)
@@ -226,7 +281,7 @@ export default function App() {
     }
   }
 
-  // 8. Propose & Validate Candidate Patch handler (Phase 6 / P1)
+  // 9. Propose & Validate Candidate Patch handler (Phase 6 / P1)
   const handleProposePatch = async (customInstructions?: string) => {
     if (!activeRun) return
     setTriggeringPatch(true)
@@ -288,6 +343,7 @@ export default function App() {
               justifyContent: 'space-between',
               fontSize: '13px',
             }}
+            role="alert"
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               {bannerNotice.type === 'error' ? <AlertCircle size={16} /> : <Info size={16} />}
@@ -301,20 +357,22 @@ export default function App() {
                 color: 'inherit',
                 cursor: 'pointer',
                 fontWeight: 600,
+                fontSize: '16px',
               }}
+              aria-label="Dismiss notice"
             >
               &times;
             </button>
           </div>
         )}
 
-        {/* Core Principles & Trust Boundary Banner */}
+        {/* Project Header Info */}
         <section
           style={{
             background: 'var(--bg-surface)',
             border: '1px solid var(--bg-border)',
             borderRadius: 'var(--radius-lg)',
-            padding: '18px 24px',
+            padding: '20px 24px',
             marginBottom: '24px',
             display: 'flex',
             alignItems: 'center',
@@ -322,50 +380,71 @@ export default function App() {
             flexWrap: 'wrap',
             gap: '16px',
           }}
+          aria-label="Active Project Details"
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             <div
               style={{
-                width: '38px',
-                height: '38px',
+                width: '42px',
+                height: '42px',
                 borderRadius: 'var(--radius-md)',
-                background: 'rgba(6, 182, 212, 0.1)',
-                border: '1px solid rgba(6, 182, 212, 0.25)',
+                background: 'rgba(6, 182, 212, 0.12)',
+                border: '1px solid rgba(6, 182, 212, 0.3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: 'var(--accent-cyan)',
               }}
             >
-              <CheckCircle2 size={20} />
+              <FolderGit2 size={22} />
             </div>
             <div>
-              <h2 style={{ fontSize: '15px', fontWeight: 700, letterSpacing: '-0.01em' }}>
-                Strict Verification Invariant
-              </h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '13px', maxWidth: '780px' }}>
-                Observed test results are authoritative facts. AI model output is strictly a hypothesis grounded in bounded evidence. Model failure or latency never alters deterministic check outcomes.
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.01em' }}>
+                  {projectDetail?.repository || (projects.length > 0 ? projects[0].repository : 'No Project Selected')}
+                </h2>
+                {projectDetail?.active && (
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: 'var(--status-pass-text)',
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--status-pass-border)',
+                    }}
+                  >
+                    Active
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                Default branch: <code style={{ color: 'var(--text-main)' }}>{projectDetail?.default_branch || 'main'}</code> &middot;{' '}
+                Check profile: <code style={{ color: 'var(--text-main)' }}>v{projectDetail?.active_profile?.version || 1} ({projectDetail?.active_profile?.name || 'default'})</code>
               </p>
             </div>
           </div>
 
-          {projectDetail && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                fontSize: '12px',
-                background: 'var(--bg-surface-elevated)',
-                padding: '6px 14px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--bg-border)',
-                fontFamily: 'var(--font-mono)',
-              }}
-            >
-              <FolderGit2 size={14} color="var(--accent-cyan)" />
-              <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{projectDetail.repository}</span>
-              <span style={{ color: 'var(--text-subtle)' }}>({projectDetail.default_branch})</span>
+          {/* Quick Metrics */}
+          {runs.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px', fontSize: '13px' }}>
+              <div>
+                <span style={{ color: 'var(--text-subtle)' }}>Total Runs: </span>
+                <strong style={{ color: 'var(--text-main)' }}>{runs.length}</strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-subtle)' }}>Passing: </span>
+                <strong style={{ color: 'var(--status-pass-text)' }}>
+                  {runs.filter((r) => r.test_outcome === 'passed').length}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: 'var(--text-subtle)' }}>Regressions: </span>
+                <strong style={{ color: 'var(--status-fail-text)' }}>
+                  {runs.filter((r) => r.test_outcome === 'failed').length}
+                </strong>
+              </div>
             </div>
           )}
         </section>
@@ -391,7 +470,7 @@ export default function App() {
                 No Projects Connected
               </h3>
               <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '440px' }}>
-                Connect a GitHub repository via webhook or load our pre-configured demo project to explore the Phase 5 dashboard.
+                Connect a GitHub repository via webhook or load our pre-configured demo project to explore the Phase 7 dashboard.
               </p>
             </div>
             <button
@@ -428,7 +507,7 @@ export default function App() {
               loading={runsLoading}
             />
 
-            {/* Right Column: Run Detail with Checks, Evidence & AI Diagnosis */}
+            {/* Right Column: Run Detail with Checks, Evidence, AI Diagnosis, and Live SSE */}
             {activeRun ? (
               <RunDetailView
                 run={activeRun}
@@ -440,6 +519,8 @@ export default function App() {
                 triggeringAnalysis={triggeringAnalysis}
                 triggeringPatch={triggeringPatch}
                 cancellingRun={cancellingRun}
+                isStreaming={isStreaming}
+                isConnected={isConnected}
                 onRequestAnalysis={handleRequestAnalysis}
                 onRetryAnalysis={handleRetryAnalysis}
                 onProposePatch={handleProposePatch}
@@ -477,7 +558,7 @@ export default function App() {
           justifyContent: 'space-between',
         }}
       >
-        <span>CodeSentinel Phase 5 &middot; Evidence-Led Regression Diagnosis</span>
+        <span>CodeSentinel Phase 7 &middot; Evidence-Led Regression Diagnosis &amp; Real-Time Telemetry</span>
         <span>Apache 2.0 Open Source &middot; Powered by Nebius Token Factory &amp; NVIDIA Open Models</span>
       </footer>
     </div>

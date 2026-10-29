@@ -1,4 +1,4 @@
-"""Phase 5 Tests: Dashboard API endpoints, run cancellation, evidence query, and demo seed."""
+﻿"""Phase 5 Tests: Dashboard API endpoints, run cancellation, evidence query, and demo seed."""
 
 import pytest
 from httpx import AsyncClient
@@ -136,3 +136,44 @@ async def test_seed_demo_project_creates_rich_dataset(
     for ref_id in referenced_ids:
         assert ref_id in actual_evidence_ids
 
+
+
+@pytest.mark.asyncio
+async def test_stream_run_events_unauthorized_blocked(
+    async_client: AsyncClient,
+    user_bob: User,
+    project_with_running_run: tuple[Project, Run],
+):
+    """Test that streaming events for another user's run returns 403 Forbidden."""
+    _, run = project_with_running_run
+    headers = {"X-Test-User-ID": str(user_bob.id)}
+
+    response = await async_client.get(f"/api/v1/runs/{run.id}/events", headers=headers)
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "forbidden"
+
+
+@pytest.mark.asyncio
+async def test_stream_run_events_returns_event_stream(
+    async_client: AsyncClient,
+    user_alice: User,
+    project_with_running_run: tuple[Project, Run],
+):
+    """Test that GET /api/v1/runs/{id}/events returns text/event-stream with initial state."""
+    _, run = project_with_running_run
+    headers = {"X-Test-User-ID": str(user_alice.id)}
+
+    async with async_client.stream("GET", f"/api/v1/runs/{run.id}/events", headers=headers) as response:
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers.get("content-type", "")
+        assert response.headers.get("cache-control") == "no-cache"
+
+        first_chunk = b""
+        async for chunk in response.aiter_bytes():
+            first_chunk += chunk
+            if b"event: run_update" in first_chunk or b": ping" in first_chunk:
+                break
+
+        assert len(first_chunk) > 0
+        decoded = first_chunk.decode("utf-8")
+        assert "event: run_update" in decoded or ": ping" in decoded

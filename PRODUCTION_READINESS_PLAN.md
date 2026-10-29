@@ -1,4 +1,4 @@
-# Production Readiness Plan: CodeSentinel
+﻿# Production Readiness Plan: CodeSentinel
 
 **Repository:** `https://github.com/AlfinTG/CodeSentinel.git`  
 **Current Working Branch:** `prashant`  
@@ -24,18 +24,18 @@ The purpose of this document is to provide an evidence-based audit of CodeSentin
 CodeSentinel follows a decoupled client-server architecture with an asynchronous execution pipeline, containerized service orchestration, and external AI provider integration:
 
 ```
-[ GitHub Webhook ] ──(HMAC-SHA256)──> [ FastAPI API Layer ] ──> [ PostgreSQL 16 ]
-                                             │                         │
-                                    (FastAPI BackgroundTasks)          │
-                                             ▼                         ▼
+[ GitHub Webhook ] â”€â”€(HMAC-SHA256)â”€â”€> [ FastAPI API Layer ] â”€â”€> [ PostgreSQL 16 ]
+                                             â”‚                         â”‚
+                                    (FastAPI BackgroundTasks)          â”‚
+                                             â–¼                         â–¼
                                    [ Runner / Isolated Subproc ]   [ Nebius Token Factory ]
                                    (Stripped Env, No shell=True)  (NVIDIA Nemotron 70B)
-                                             │                         │
-                                             ▼                         ▼
-                                    [ Evidence Store ] <─── [ Model Validator ]
+                                             â”‚                         â”‚
+                                             â–¼                         â–¼
+                                    [ Evidence Store ] <â”€â”€â”€ [ Model Validator ]
                                    (256 KiB Capped, Digest)   (Cross-Referenced IDs)
-                                             │
-                                             ▼
+                                             â”‚
+                                             â–¼
                                  [ React + Vite Dashboard ]
                                  (Factual / AI Strict Separation)
 ```
@@ -73,9 +73,9 @@ The following verification commands were executed directly against the local rep
 - **Command:** `npm run build` (inside `frontend/`)
 - **Observed Result:** **Clean build in 5.90s** (Exit code: 0)
 - **Artifacts:**
-  - `dist/index.html` (0.82 kB │ gzip: 0.46 kB)
-  - `dist/assets/index-BqqZ0wnH.css` (1.54 kB │ gzip: 0.73 kB)
-  - `dist/assets/index-CQDsYsqi.js` (207.71 kB │ gzip: 59.02 kB)
+  - `dist/index.html` (0.82 kB â”‚ gzip: 0.46 kB)
+  - `dist/assets/index-BqqZ0wnH.css` (1.54 kB â”‚ gzip: 0.73 kB)
+  - `dist/assets/index-CQDsYsqi.js` (207.71 kB â”‚ gzip: 59.02 kB)
   - 1576 modules transformed with zero TypeScript errors.
 
 ### 3.3. Nebius Live Provider Call Status
@@ -120,13 +120,13 @@ Every capability below is classified under one of four strict audit classificati
 To transition CodeSentinel into an enterprise-grade production platform, the engineering work is organized into **exactly ten distinct, logically sequenced phases**:
 
 ```
-[Phase 1: Sandboxing] ──> [Phase 2: Queue Decoupling] ──> [Phase 3: Auth & Identity] ──> [Phase 4: Nebius Live Handshake]
-                                                                                                  │
-                                                                                                  ▼
-[Phase 8: Backup/Restore] <── [Phase 7: Frontend Polish] <── [Phase 6: Observability] <── [Phase 5: Secrets & KMS]
-         │
-         ▼
-[Phase 9: Staging Rehearsal] ──> [Phase 10: Production Release]
+[Phase 1: Sandboxing] â”€â”€> [Phase 2: Queue Decoupling] â”€â”€> [Phase 3: Auth & Identity] â”€â”€> [Phase 4: Nebius Live Handshake]
+                                                                                                  â”‚
+                                                                                                  â–¼
+[Phase 8: Backup/Restore] <â”€â”€ [Phase 7: Frontend Polish] <â”€â”€ [Phase 6: Observability] <â”€â”€ [Phase 5: Secrets & KMS]
+         â”‚
+         â–¼
+[Phase 9: Staging Rehearsal] â”€â”€> [Phase 10: Production Release]
 ```
 
 ---
