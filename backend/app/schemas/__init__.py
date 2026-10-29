@@ -8,6 +8,7 @@ from app.schemas.analysis import (
 )
 from app.schemas.common import ErrorDetail, ErrorResponse, PaginatedResponse
 from app.schemas.evidence import EvidenceItemCreate, EvidenceItemRead
+from app.schemas.job import JobCancelResponse, JobCreateRequest, JobDetail, JobRead
 from app.schemas.project import ProjectCheckProfileRead, ProjectCreate, ProjectDetail, ProjectRead
 from app.schemas.run import CheckRunRead, RunDetail, RunRead
 from app.schemas.user import CurrentUserResponse, UserRead
@@ -31,4 +32,8 @@ __all__ = [
     "ModelDiagnosisSchema",
     "RootCauseHypothesis",
     "HypothesisConfidence",
+    "JobRead",
+    "JobDetail",
+    "JobCreateRequest",
+    "JobCancelResponse",
 ]

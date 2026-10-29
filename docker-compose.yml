@@ -31,17 +31,36 @@ services:
       timeout: 5s
       retries: 5
 
+<<<<<<< HEAD
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: codesentinel-backend
     restart: unless-stopped
+=======
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: codesentinel-api
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg://codesentinel:codesentinel_password@postgres:5432/codesentinel_dev
+      - QUEUE_BACKEND=database
+      - REDIS_URL=redis://redis:6379/0
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+>>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+<<<<<<< HEAD
     env_file:
       - .env.production
     environment:
@@ -68,6 +87,26 @@ services:
         condition: service_healthy
     ports:
       - "5173:80"
+=======
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: codesentinel-worker
+    restart: unless-stopped
+    command: python -m app.worker.main
+    environment:
+      - DATABASE_URL=postgresql+psycopg://codesentinel:codesentinel_password@postgres:5432/codesentinel_dev
+      - QUEUE_BACKEND=database
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_POLL_INTERVAL_SECONDS=1.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+>>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
 
 volumes:
   postgres_data:

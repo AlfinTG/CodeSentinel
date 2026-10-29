@@ -12,6 +12,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.models.analysis import Analysis
     from app.models.evidence import EvidenceItem
+    from app.models.job import Job
     from app.models.project import Project
 
 
@@ -20,6 +21,7 @@ class LifecycleStatus(str, enum.Enum):
     QUEUED = "queued"
     RUNNING = "running"
     COMPLETED = "completed"
+    SUCCEEDED = "succeeded"
     FAILED = "failed"
     TIMED_OUT = "timed_out"
     CANCELLED = "cancelled"
@@ -91,6 +93,9 @@ class Run(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     )
     analyses: Mapped[list["Analysis"]] = relationship(
         "Analysis", back_populates="run", cascade="all, delete-orphan"
+    )
+    jobs: Mapped[list["Job"]] = relationship(
+        "Job", back_populates="run", cascade="all, delete-orphan"
     )
 
 

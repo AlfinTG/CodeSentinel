@@ -1,5 +1,6 @@
 """Run, check, evidence, and analysis endpoints matching API_CONTRACTS.md."""
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -9,13 +10,16 @@ from app.api.deps import get_authorized_project, get_current_user
 from app.db.session import get_db
 from app.models.analysis import Analysis
 from app.models.evidence import EvidenceItem
+from app.models.job import Job, JobStatus, JobType
 from app.models.project import Project
-from app.models.run import CheckRun, Run
+from app.models.run import CheckRun, LifecycleStatus, Run
 from app.models.user import User
 from app.schemas.analysis import AnalysisRead
 from app.schemas.common import PaginatedResponse
 from app.schemas.evidence import EvidenceItemRead
+from app.schemas.job import JobRead
 from app.schemas.run import CheckRunRead, RunDetail, RunRead
+from app.services.queue import cancel_job, enqueue_job
 
 router = APIRouter(tags=["Runs & Evidence"])
 
@@ -187,12 +191,18 @@ def get_run_analysis(
     return AnalysisRead.model_validate(analysis)
 
 
+<<<<<<< HEAD
 @router.get("/runs/{run_id}/evidence", response_model=PaginatedResponse[EvidenceItemRead])
 def get_run_all_evidence(
+=======
+@router.get("/runs/{run_id}/job", response_model=JobRead)
+def get_run_job(
+>>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
     run_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     request: Request,
+<<<<<<< HEAD
     limit: int = Query(50, ge=1, le=100),
 ):
     """Returns all evidence items for a run, ordered by creation time.
@@ -214,12 +224,63 @@ def get_run_all_evidence(
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunRead)
+=======
+):
+    """Returns the latest queue job associated with this run."""
+    request_id = getattr(request.state, "request_id", "req-unknown")
+    run = _authorize_run_access(run_id, current_user, db, request)
+
+    job = (
+        db.query(Job)
+        .filter(Job.run_id == run.id)
+        .order_by(Job.created_at.desc())
+        .first()
+    )
+
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "error": {
+                    "code": "job_not_found",
+                    "message": "No queue job found for this run",
+                    "request_id": request_id,
+                }
+            },
+        )
+
+    return JobRead.model_validate(job)
+
+
+@router.post("/runs/{run_id}/enqueue", response_model=JobRead, status_code=status.HTTP_202_ACCEPTED)
+def enqueue_run_job(
+    run_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    request: Request,
+):
+    """Enqueues or re-enqueues an asynchronous scan job for this run."""
+    run = _authorize_run_access(run_id, current_user, db, request)
+    job = enqueue_job(
+        db=db,
+        project_id=run.project_id,
+        job_type=JobType.SCAN,
+        run_id=run.id,
+    )
+    db.commit()
+    db.refresh(job)
+    return JobRead.model_validate(job)
+
+
+@router.post("/runs/{run_id}/cancel")
+>>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
 def cancel_run(
     run_id: str,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     request: Request,
 ):
+<<<<<<< HEAD
     """Cancels a queued or running run per Section 2 of API_CONTRACTS.md.
 
     Transitions lifecycle status to CANCELLED and test outcome to CANCELLED if pending.
@@ -238,17 +299,29 @@ def cancel_run(
 
     current_lifecycle = LifecycleStatus(run.lifecycle_status)
     if current_lifecycle not in {LifecycleStatus.RECEIVED, LifecycleStatus.QUEUED, LifecycleStatus.RUNNING}:
+=======
+    """Cancel a queued or running run and its associated queue job per API_CONTRACTS.md."""
+    request_id = getattr(request.state, "request_id", "req-unknown")
+    run = _authorize_run_access(run_id, current_user, db, request)
+
+    if run.lifecycle_status not in (LifecycleStatus.QUEUED.value, LifecycleStatus.RUNNING.value):
+>>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
                 "error": {
+<<<<<<< HEAD
                     "code": "invalid_state",
+=======
+                    "code": "invalid_transition",
+>>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)
                     "message": f"Run cannot be cancelled in state '{run.lifecycle_status}'",
                     "request_id": request_id,
                 }
             },
         )
 
+<<<<<<< HEAD
     try:
         new_lifecycle = transition_lifecycle(current_lifecycle, LifecycleStatus.CANCELLED)
         run.lifecycle_status = new_lifecycle.value
@@ -273,3 +346,27 @@ def cancel_run(
         ) from exc
 
     return RunRead.model_validate(run)
+=======
+    # Cancel any active or queued jobs associated with this run
+    active_jobs = (
+        db.query(Job)
+        .filter(
+            Job.run_id == run.id,
+            Job.status.in_([JobStatus.QUEUED.value, JobStatus.RUNNING.value]),
+        )
+        .all()
+    )
+    for j in active_jobs:
+        cancel_job(db, j.id)
+
+    run.lifecycle_status = LifecycleStatus.CANCELLED.value
+    run.completed_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(run)
+
+    return {
+        "run_id": run.id,
+        "lifecycle_status": run.lifecycle_status,
+        "message": "Run cancelled successfully",
+    }
+>>>>>>> 10d1e22 (feat(phase-2): add distributed queue and worker architecture)

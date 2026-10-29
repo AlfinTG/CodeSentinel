@@ -10,7 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_db
 from app.main import app
-from app.models.base import Base
+from app.models import Base
 from app.models.user import User
 
 # In-memory SQLite using StaticPool ensures a single shared in-memory database across threads
