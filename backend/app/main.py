@@ -9,7 +9,12 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
-from app.core.logging import clear_log_context, configure_logging, set_log_context
+from app.core.logging import (
+    clear_log_context,
+    configure_logging,
+    sanitize_correlation_id,
+    set_log_context,
+)
 from app.core.telemetry import generate_metrics_payload, record_http_request
 
 # Initialize structured logging
@@ -34,8 +39,12 @@ app.add_middleware(
 @app.middleware("http")
 async def add_request_id_and_security_headers(request: Request, call_next):
     """Attach correlation request_id, record latency metrics, and add baseline security headers."""
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    correlation_id = request.headers.get("X-Correlation-ID") or request_id
+    raw_request_id = request.headers.get("X-Request-ID")
+    request_id = sanitize_correlation_id(raw_request_id, default=str(uuid.uuid4()))
+
+    raw_correlation_id = request.headers.get("X-Correlation-ID")
+    correlation_id = sanitize_correlation_id(raw_correlation_id, default=request_id)
+
     request.state.request_id = request_id
     request.state.correlation_id = correlation_id
     set_log_context(request_id=request_id, correlation_id=correlation_id)
@@ -50,10 +59,22 @@ async def add_request_id_and_security_headers(request: Request, call_next):
         return response
     finally:
         duration = time.perf_counter() - start_time
-        status_code = response.status_code if response is not None else 500
-        # Normalize metrics path (avoid high-cardinality endpoint explosions on 404s/unknowns)
         path = request.url.path
-        record_http_request(request.method, path, status_code, duration)
+        # Do not recursively instrument the /metrics endpoint itself to prevent metric noise
+        if path != "/metrics":
+            status_code = response.status_code if response is not None else 500
+            # Bound metric cardinality by using the matched route path template instead of arbitrary client URL
+            route = request.scope.get("route")
+            if route and hasattr(route, "path"):
+                raw_route = route.path
+                endpoint = (
+                    f"/api/v1{raw_route}"
+                    if not raw_route.startswith("/api/v1") and request.url.path.startswith("/api/v1")
+                    else raw_route
+                )
+            else:
+                endpoint = "unmatched"
+            record_http_request(request.method, endpoint, status_code, duration)
         clear_log_context()
 
 

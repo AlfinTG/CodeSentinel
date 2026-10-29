@@ -3,6 +3,7 @@
 import contextvars
 import json
 import logging
+import re
 import sys
 from datetime import UTC, datetime
 from typing import Any
@@ -19,6 +20,20 @@ correlation_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 run_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "run_id_ctx", default=None
 )
+
+
+def sanitize_correlation_id(raw_id: str | None, default: str) -> str:
+    """Validate and sanitize external correlation / request IDs to prevent header injection and log spoofing.
+
+    Accepts ASCII alphanumeric characters, underscores, dashes, dots, and colons up to 128 chars.
+    Rejects any string with whitespace, CRLF, control characters, or excessive length.
+    """
+    if not raw_id or not isinstance(raw_id, str):
+        return default
+    cleaned = raw_id.strip()
+    if not cleaned or len(cleaned) > 128 or not re.match(r"^[a-zA-Z0-9_\-\.:]+$", cleaned):
+        return default
+    return cleaned
 
 
 def set_log_context(
@@ -50,38 +65,52 @@ class StructuredJsonFormatter(logging.Formatter):
         self.redact = redact
 
     def format(self, record: logging.LogRecord) -> str:
-        # Retrieve base message
-        raw_message = record.getMessage()
-        sanitized_message = redact_secrets(raw_message) if self.redact else raw_message
+        try:
+            # Retrieve base message safely (prevent format interpolation exceptions from breaking logging)
+            try:
+                raw_message = record.getMessage()
+            except Exception:
+                raw_message = str(record.msg)
 
-        # Resolve correlation context (record extra overrides ContextVar)
-        req_id = getattr(record, "request_id", None) or request_id_ctx.get()
-        corr_id = getattr(record, "correlation_id", None) or correlation_id_ctx.get()
-        r_id = getattr(record, "run_id", None) or run_id_ctx.get()
+            sanitized_message = redact_secrets(raw_message) if self.redact else raw_message
 
-        log_payload: dict[str, Any] = {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": sanitized_message,
-        }
+            # Resolve correlation context (record extra overrides ContextVar)
+            req_id = getattr(record, "request_id", None) or request_id_ctx.get()
+            corr_id = getattr(record, "correlation_id", None) or correlation_id_ctx.get()
+            r_id = getattr(record, "run_id", None) or run_id_ctx.get()
 
-        if req_id:
-            log_payload["request_id"] = req_id
-        if corr_id:
-            log_payload["correlation_id"] = corr_id
-        if r_id:
-            log_payload["run_id"] = r_id
+            log_payload: dict[str, Any] = {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": sanitized_message,
+            }
 
-        # Format exception or stack trace if present
-        if record.exc_info:
-            exc_text = self.formatException(record.exc_info)
-            log_payload["exception"] = redact_secrets(exc_text) if self.redact else exc_text
-        elif record.stack_info:
-            stack_text = self.formatStack(record.stack_info)
-            log_payload["stack"] = redact_secrets(stack_text) if self.redact else stack_text
+            if req_id:
+                log_payload["request_id"] = req_id
+            if corr_id:
+                log_payload["correlation_id"] = corr_id
+            if r_id:
+                log_payload["run_id"] = r_id
 
-        return json.dumps(log_payload, default=str)
+            # Format exception or stack trace if present
+            if record.exc_info:
+                exc_text = self.formatException(record.exc_info)
+                log_payload["exception"] = redact_secrets(exc_text) if self.redact else exc_text
+            elif record.stack_info:
+                stack_text = self.formatStack(record.stack_info)
+                log_payload["stack"] = redact_secrets(stack_text) if self.redact else stack_text
+
+            return json.dumps(log_payload, default=str)
+        except Exception as exc:
+            # Fallback that NEVER raises, ensuring logging failures never break API or worker execution
+            safe_exc = redact_secrets(str(exc)) if self.redact else str(exc)
+            return json.dumps({
+                "timestamp": datetime.now(UTC).isoformat(),
+                "level": "ERROR",
+                "logger": "app.core.logging",
+                "message": f"[LOGGING_ERROR] Failed to format log record: {safe_exc}",
+            })
 
 
 def configure_logging(log_level: str = "INFO", json_format: bool = True) -> None:

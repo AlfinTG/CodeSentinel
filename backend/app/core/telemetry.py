@@ -156,6 +156,30 @@ def set_circuit_breaker_metric(provider: str, state_value: int) -> None:
         CIRCUIT_BREAKER_STATE.labels(provider=provider).set(state_value)
 
 
+def inc_active_runs() -> None:
+    """Increment active runs gauge."""
+    with contextlib.suppress(Exception):
+        ACTIVE_RUNS.inc()
+
+
+def dec_active_runs() -> None:
+    """Decrement active runs gauge safely without going negative."""
+    with contextlib.suppress(Exception):
+        val = getattr(ACTIVE_RUNS, "_value", None)
+        if val is not None:
+            current = val.get()
+            if current > 0:
+                ACTIVE_RUNS.dec()
+        else:
+            ACTIVE_RUNS.dec()
+
+
+def set_active_runs(count: int) -> None:
+    """Explicitly set active runs gauge count."""
+    with contextlib.suppress(Exception):
+        ACTIVE_RUNS.set(max(0, count))
+
+
 def generate_metrics_payload() -> tuple[bytes, str]:
     """Generate the latest Prometheus text exposition bytes and content type."""
     return generate_latest(registry), CONTENT_TYPE_LATEST
