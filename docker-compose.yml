@@ -88,6 +88,20 @@ services:
     ports:
       - "5173:80"
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: codesentinel-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:
+  prometheus_data:

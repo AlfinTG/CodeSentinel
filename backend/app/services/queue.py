@@ -121,6 +121,12 @@ def enqueue_job(
         db.add(job)
         db.flush()
 
+    try:
+        from app.core.telemetry import record_queue_job_event
+        record_queue_job_event(type_str, "enqueued")
+    except Exception:
+        pass
+
     return job
 
 
@@ -262,6 +268,13 @@ def complete_job(
             elif job.job_type == JobType.ANALYSIS.value:
                 run.analysis_outcome = AnalysisOutcome.SUCCEEDED.value
 
+    duration = (now - _as_utc(job.started_at)).total_seconds() if job.started_at else None
+    try:
+        from app.core.telemetry import record_queue_job_event
+        record_queue_job_event(job.job_type, "succeeded", duration)
+    except Exception:
+        pass
+
     db.commit()
     db.refresh(job)
     return job
@@ -351,6 +364,14 @@ def fail_job(
             error_message,
         )
 
+    duration = (now - _as_utc(job.started_at)).total_seconds() if job.started_at else None
+    try:
+        from app.core.telemetry import record_queue_job_event
+
+        record_queue_job_event(job.job_type, "retry" if should_retry else "failed", duration)
+    except Exception:
+        pass
+
     db.commit()
     db.refresh(job)
     return job
@@ -397,6 +418,14 @@ def timeout_job(
                     run.test_outcome = TestOutcome.TIMED_OUT.value
             elif job.job_type == JobType.ANALYSIS.value:
                 run.analysis_outcome = AnalysisOutcome.UNAVAILABLE.value
+
+    duration = (now - _as_utc(job.started_at)).total_seconds() if job.started_at else None
+    try:
+        from app.core.telemetry import record_queue_job_event
+
+        record_queue_job_event(job.job_type, "timed_out", duration)
+    except Exception:
+        pass
 
     db.commit()
     db.refresh(job)
