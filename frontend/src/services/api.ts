@@ -8,6 +8,7 @@ import {
   EvidenceItem,
   Analysis,
   PatchAttempt,
+  CurrentUserResponse,
   ApiError,
 } from '../types'
 
@@ -17,7 +18,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     ...(options.headers || {}),
   }
 
-  const response = await fetch(path, { ...options, headers })
+  const response = await fetch(path, { ...options, headers, credentials: 'include' })
 
   if (!response.ok) {
     let errDetail: ApiError = {
@@ -128,6 +129,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ custom_instructions: customInstructions }),
     })
+  },
+
+  async getCurrentUser(): Promise<CurrentUserResponse> {
+    return request<CurrentUserResponse>('/api/v1/auth/me')
+  },
+
+  async logout(): Promise<{ status: string }> {
+    return request<{ status: string }>('/api/v1/auth/logout', {
+      method: 'POST',
+    })
+  },
+
+  getLoginUrl(): string {
+    return '/api/v1/auth/github/login'
   },
 }
 
