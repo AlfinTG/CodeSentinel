@@ -29,6 +29,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.telemetry import record_nebius_usage
 from app.models.analysis import Analysis
 from app.models.evidence import EvidenceItem
 from app.models.run import AnalysisOutcome, Run
@@ -177,6 +178,11 @@ def _do_analysis(run: Run, analysis: Analysis, db: Session) -> None:
             "Nebius circuit breaker is OPEN or probe in-flight for run=%s — fast-failing analysis without calling provider",
             run.id,
         )
+        record_nebius_usage(
+            model_id=analysis.model_id or settings.NEBIUS_MODEL_ID,
+            duration_seconds=0.0,
+            outcome="circuit_breaker_open",
+        )
         _mark_failed(analysis, db, safe_error_code="circuit_breaker_open")
         return
 
@@ -198,6 +204,11 @@ def _do_analysis(run: Run, analysis: Analysis, db: Session) -> None:
         analysis.output_tokens = token_counts.get("completion_tokens")
 
         if raw_response is None:
+            record_nebius_usage(
+                model_id=analysis.model_id or settings.NEBIUS_MODEL_ID,
+                duration_seconds=latency_ms / 1000.0,
+                outcome=f"failed_{error_code}",
+            )
             if is_transient:
                 nebius_circuit_breaker.record_failure()
             else:
@@ -207,6 +218,15 @@ def _do_analysis(run: Run, analysis: Analysis, db: Session) -> None:
             _mark_failed(analysis, db, safe_error_code=error_code)
             return
 
+        prompt_tok = token_counts.get("prompt_tokens", 0) if isinstance(token_counts, dict) else 0
+        comp_tok = token_counts.get("completion_tokens", 0) if isinstance(token_counts, dict) else 0
+        record_nebius_usage(
+            model_id=analysis.model_id or settings.NEBIUS_MODEL_ID,
+            prompt_tokens=prompt_tok,
+            completion_tokens=comp_tok,
+            duration_seconds=latency_ms / 1000.0,
+            outcome="succeeded",
+        )
         nebius_circuit_breaker.record_success()
 
     except Exception:

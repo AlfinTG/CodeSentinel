@@ -15,6 +15,7 @@ from collections.abc import Callable
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logging import clear_log_context, set_log_context
 from app.db.session import SessionLocal
 from app.models.analysis import Analysis
 from app.models.job import JobType
@@ -87,6 +88,7 @@ class Worker:
         run_id = job.run_id
         timeout_seconds = job.timeout_seconds
 
+        set_log_context(run_id=run_id)
         logger.info(
             "Worker %s claimed job=%s (type=%s, run_id=%s, attempt=%d)",
             self.worker_id,
@@ -128,6 +130,7 @@ class Worker:
                     is_transient=True,  # Transient infrastructure failure triggers bounded retry
                 )
 
+        clear_log_context()
         self.jobs_processed += 1
         return True
 

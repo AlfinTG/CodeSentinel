@@ -276,6 +276,13 @@ def process_github_delivery(
     db.add(run)
     db.flush()
 
+    try:
+        from app.core.telemetry import inc_active_runs
+
+        inc_active_runs()
+    except Exception:
+        pass
+
     delivery = GitHubDelivery(
         delivery_id=delivery_id,
         event_name=event_name,

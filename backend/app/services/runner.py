@@ -835,6 +835,14 @@ def execute_run_checks(
             allowed_base=allowed_base,
         )
 
+        try:
+            from app.core.telemetry import record_check_execution
+
+            tool = command[0] if (command and isinstance(command, list)) else "check"
+            record_check_execution(tool, result.status, result.duration_ms / 1000.0)
+        except Exception:
+            pass
+
         # Normalize and bound output before storing
         normalized = normalize_and_bound_output(
             raw_output=result.output,
