@@ -138,6 +138,7 @@ def transition_lifecycle(current: LifecycleStatus, target: LifecycleStatus) -> L
     """Validate and transition lifecycle status.
 
     Returns the new state or the current state if idempotent.
+    Updates active runs telemetry gauge on state boundaries.
     """
     if current == target:
         return current  # Idempotent re-affirmation
@@ -145,6 +146,36 @@ def transition_lifecycle(current: LifecycleStatus, target: LifecycleStatus) -> L
     allowed = LEGAL_LIFECYCLE_TRANSITIONS.get(current, set())
     if target not in allowed:
         raise InvalidStateTransitionError(current.value, target.value, "Lifecycle")
+
+    # Update active runs telemetry gauge
+    active_states = {
+        LifecycleStatus.RECEIVED,
+        LifecycleStatus.QUEUED,
+        LifecycleStatus.RUNNING,
+    }
+    terminal_states = {
+        LifecycleStatus.COMPLETED,
+        LifecycleStatus.SUCCEEDED,
+        LifecycleStatus.FAILED,
+        LifecycleStatus.TIMED_OUT,
+        LifecycleStatus.CANCELLED,
+        LifecycleStatus.INCONCLUSIVE,
+    }
+    if current in active_states and target in terminal_states:
+        try:
+            from app.core.telemetry import dec_active_runs
+
+            dec_active_runs()
+        except Exception:
+            pass
+    elif current not in active_states and target in active_states:
+        try:
+            from app.core.telemetry import inc_active_runs
+
+            inc_active_runs()
+        except Exception:
+            pass
+
     return target
 
 

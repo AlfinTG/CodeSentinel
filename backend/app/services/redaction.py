@@ -1,6 +1,7 @@
 """Secret redaction engine for test outputs, logs, and evidence items."""
 
 import re
+from typing import Any
 
 # Common patterns for API tokens, secret keys, and credentials
 REDACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
@@ -33,15 +34,18 @@ REDACTION_PATTERNS: list[tuple[re.Pattern, str]] = [
 ]
 
 
-def redact_secrets(text: str, custom_canaries: list[str] | None = None) -> str:
+def redact_secrets(text: Any, custom_canaries: list[str] | None = None) -> str:
     """Scans and masks credentials, tokens, private keys, and canary strings from text.
 
     Ensures that secrets never reach database storage, UI rendering, or external LLM prompts.
+    Handles non-string inputs safely without crashing.
     """
-    if not text:
+    if text is None:
         return ""
 
-    redacted = text
+    redacted = str(text) if not isinstance(text, str) else text
+    if not redacted:
+        return ""
 
     # Redact explicit canary values first (e.g. from runtime configuration)
     if custom_canaries:
