@@ -92,7 +92,7 @@ async def benchmark_webhook_ingestion(
                 timeout_count += 1
             except (httpx.NetworkError, httpx.ConnectError):
                 connection_error_count += 1
-            except Exception:
+            except Exception:  # noqa: BLE001
                 connection_error_count += 1
 
     limits = httpx.Limits(max_connections=concurrency * 2, max_keepalive_connections=concurrency)
@@ -155,20 +155,22 @@ async def benchmark_sse_listeners(
     async def _listen_client():
         nonlocal connected_clients, events_received, disconnect_count, error_count
         try:
-            async with httpx.AsyncClient(timeout=duration_seconds + 3.0) as client:
-                async with client.stream("GET", url, headers=headers) as response:
-                    if response.status_code == 200:
-                        connected_clients += 1
-                        start = time.perf_counter()
-                        async for _line in response.aiter_lines():
-                            events_received += 1
-                            if (time.perf_counter() - start) >= duration_seconds:
-                                break
-                    else:
-                        disconnect_count += 1
+            async with (
+                httpx.AsyncClient(timeout=duration_seconds + 3.0) as client,
+                client.stream("GET", url, headers=headers) as response,
+            ):
+                if response.status_code == 200:
+                    connected_clients += 1
+                    start = time.perf_counter()
+                    async for _line in response.aiter_lines():
+                        events_received += 1
+                        if (time.perf_counter() - start) >= duration_seconds:
+                            break
+                else:
+                    disconnect_count += 1
         except asyncio.CancelledError:
             pass
-        except Exception:
+        except Exception:  # noqa: BLE001
             error_count += 1
 
     tasks = [asyncio.create_task(_listen_client()) for _ in range(concurrency)]
