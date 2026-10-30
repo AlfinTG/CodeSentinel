@@ -1,9 +1,13 @@
 """Phase 0 Gate Tests: Baseline verification, health probes, and security headers."""
 
+from unittest.mock import MagicMock
+
 import pytest
 from httpx import AsyncClient
 
+from app.api.deps import get_db
 from app.core.config import settings
+from app.main import app
 
 
 @pytest.mark.asyncio
@@ -31,9 +35,35 @@ async def test_health_ready_probe(async_client: AsyncClient):
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
+    assert data["database"] == "connected"
+    assert data["queue"] == "connected"
     # Ensure database credentials or host strings are NEVER leaked in ready response
     assert "@" not in str(data)
     assert "password" not in str(data)
+
+
+@pytest.mark.asyncio
+async def test_health_ready_probe_fails_when_db_down(async_client: AsyncClient, db):
+    """Test /api/v1/health/ready returns 503 Service Unavailable when DB connection fails."""
+    mock_db = MagicMock()
+    mock_db.execute.side_effect = Exception("DB connection timeout")
+
+    def override_failing_db():
+        yield mock_db
+
+    app.dependency_overrides[get_db] = override_failing_db
+    try:
+        response = await async_client.get("/api/v1/health/ready")
+        assert response.status_code == 503
+        data = response.json()
+        assert data["status"] == "unavailable"
+        assert data["database"] == "disconnected"
+        assert data["queue"] == "disconnected"
+        assert "@" not in str(data)
+    finally:
+        def restore_get_db():
+            yield db
+        app.dependency_overrides[get_db] = restore_get_db
 
 
 @pytest.mark.asyncio

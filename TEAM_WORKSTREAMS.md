@@ -1,4 +1,4 @@
-# Team Workstreams & Engineering Delivery Plan
+﻿# Team Workstreams & Engineering Delivery Plan
 
 **Repository:** `https://github.com/AlfinTG/CodeSentinel.git`  
 **Current Working Branch:** `prashant`  
@@ -27,23 +27,23 @@ This document translates the ten-phase production roadmap defined in `PRODUCTION
 ## 2. Team Ownership Areas & Primary Responsibilities
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            CodeSentinel Team                                │
-├──────────────────────────┬──────────────────────────┬───────────────────────┤
-│       Teammate A         │       Teammate B         │       Teammate C      │
-│  Backend Security &      │ Backend Architecture,    │ Frontend, Integration │
-│  Execution Sandboxing    │ Persistence & AI Engine  │ & Release Operations  │
-├──────────────────────────┼──────────────────────────┼───────────────────────┤
-│ • Container Isolation    │ • Distributed Queue / RQ │ • Dashboard UI/UX     │
-│ • Subprocess Sandboxing  │ • Database Migrations    │ • Diff Viewers        │
-│ • Resource Quotas / Caps │ • State Transitions      │ • API Client Contracts│
-│ • Webhook HMAC Integrity │ • Nebius Token Factory   │ • E2E Playwright Tests│
-│ • User Auth & RBAC       │ • Evidence Normalization │ • CI/CD Pipelines     │
-│ • Threat Modeling / Canaries • Prompt & Schema Guards│ • Release Checklist   │
-└──────────────────────────┴──────────────────────────┴───────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                            CodeSentinel Team                                â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚       Teammate A         â”‚       Teammate B         â”‚       Teammate C      â”‚
+â”‚  Backend Security &      â”‚ Backend Architecture,    â”‚ Frontend, Integration â”‚
+â”‚  Execution Sandboxing    â”‚ Persistence & AI Engine  â”‚ & Release Operations  â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚ â€¢ Container Isolation    â”‚ â€¢ Distributed Queue / RQ â”‚ â€¢ Dashboard UI/UX     â”‚
+â”‚ â€¢ Subprocess Sandboxing  â”‚ â€¢ Database Migrations    â”‚ â€¢ Diff Viewers        â”‚
+â”‚ â€¢ Resource Quotas / Caps â”‚ â€¢ State Transitions      â”‚ â€¢ API Client Contractsâ”‚
+â”‚ â€¢ Webhook HMAC Integrity â”‚ â€¢ Nebius Token Factory   â”‚ â€¢ E2E Playwright Testsâ”‚
+â”‚ â€¢ User Auth & RBAC       â”‚ â€¢ Evidence Normalization â”‚ â€¢ CI/CD Pipelines     â”‚
+â”‚ â€¢ Threat Modeling / Canaries â€¢ Prompt & Schema Guardsâ”‚ â€¢ Release Checklist   â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
-### 2.1. Teammate A — Backend Security and Execution
+### 2.1. Teammate A â€” Backend Security and Execution
 - **Core Ownership:** Host security, runner execution boundaries, cryptographic verification, and authentication/authorization infrastructure.
 - **Specific Responsibilities:**
   - Hardening check execution environments against process escapes, network calls, and resource exhaustion.
@@ -62,7 +62,7 @@ This document translates the ten-phase production roadmap defined in `PRODUCTION
   - `backend/app/services/patch.py` (Unified diff validator & sandbox execution)
   - `backend/tests/test_phase2_webhooks.py` & `test_phase3_runner_and_evidence.py`
 
-### 2.2. Teammate B — Backend Architecture, Persistence, and AI Integration
+### 2.2. Teammate B â€” Backend Architecture, Persistence, and AI Integration
 - **Core Ownership:** Async worker architecture, database modeling and lifecycle transitions, and external AI provider integration.
 - **Specific Responsibilities:**
   - Designing and implementing distributed task queue processing (Redis + Celery or ARQ) replacing in-process `fastapi.BackgroundTasks`.
@@ -82,7 +82,7 @@ This document translates the ten-phase production roadmap defined in `PRODUCTION
   - `backend/app/api/v1/endpoints/runs.py` (Run queries, checks, cancellation)
   - `backend/tests/test_phase1_transitions.py` & `test_phase4_analysis.py`
 
-### 2.3. Teammate C — Frontend, Integration, and Release Coordination
+### 2.3. Teammate C â€” Frontend, Integration, and Release Coordination
 - **Core Ownership:** Developer experience, UI dashboard, API contracts, CI/CD pipelines, documentation, and staging rehearsal.
 - **Specific Responsibilities:**
   - Modernizing the React 18 + TypeScript + Vite frontend dashboard using Tailwind CSS and Radix/Shadcn UI primitives.
@@ -109,32 +109,32 @@ This document translates the ten-phase production roadmap defined in `PRODUCTION
 Every phase maps directly to `PRODUCTION_READINESS_PLAN.md` with explicit ownership, collaborative touchpoints, source artifacts, testing requirements, and definitions of done.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Phase Dependency Chain                            │
-│                                                                             │
-│  [Phase 1: Sandboxing] (Teammate A)                                         │
-│         │                                                                   │
-│         ▼                                                                   │
-│  [Phase 2: Distributed Queue] (Teammate B) ──> [Phase 3: Auth] (Teammate A) │
-│         │                                             │                     │
-│         ▼                                             ▼                     │
-│  [Phase 4: Nebius Live] (Teammate B) <─────── [Phase 5: Secrets] (Teammate A)
-│         │                                                                   │
-│         ▼                                                                   │
-│  [Phase 6: Observability] (Teammate B & C)                                  │
-│         │                                                                   │
-│         ▼                                                                   │
-│  [Phase 7: Frontend UI/UX] (Teammate C)                                     │
-│         │                                                                   │
-│         ▼                                                                   │
-│  [Phase 8: Backup & Recovery] (Teammate B)                                  │
-│         │                                                                   │
-│         ▼                                                                   │
-│  [Phase 9: Staging Rehearsal & Fuzzing] (All Teammates)                     │
-│         │                                                                   │
-│         ▼                                                                   │
-│  [Phase 10: Production Cutover & Sign-Off] (All Teammates / Teammate C Lead) │
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                           Phase Dependency Chain                            â”‚
+â”‚                                                                             â”‚
+â”‚  [Phase 1: Sandboxing] (Teammate A)                                         â”‚
+â”‚         â”‚                                                                   â”‚
+â”‚         â–¼                                                                   â”‚
+â”‚  [Phase 2: Distributed Queue] (Teammate B) â”€â”€> [Phase 3: Auth] (Teammate A) â”‚
+â”‚         â”‚                                             â”‚                     â”‚
+â”‚         â–¼                                             â–¼                     â”‚
+â”‚  [Phase 4: Nebius Live] (Teammate B) <â”€â”€â”€â”€â”€â”€â”€ [Phase 5: Secrets] (Teammate A)
+â”‚         â”‚                                                                   â”‚
+â”‚         â–¼                                                                   â”‚
+â”‚  [Phase 6: Observability] (Teammate B & C)                                  â”‚
+â”‚         â”‚                                                                   â”‚
+â”‚         â–¼                                                                   â”‚
+â”‚  [Phase 7: Frontend UI/UX] (Teammate C)                                     â”‚
+â”‚         â”‚                                                                   â”‚
+â”‚         â–¼                                                                   â”‚
+â”‚  [Phase 8: Backup & Recovery] (Teammate B)                                  â”‚
+â”‚         â”‚                                                                   â”‚
+â”‚         â–¼                                                                   â”‚
+â”‚  [Phase 9: Staging Rehearsal & Fuzzing] (All Teammates)                     â”‚
+â”‚         â”‚                                                                   â”‚
+â”‚         â–¼                                                                   â”‚
+â”‚  [Phase 10: Production Cutover & Sign-Off] (All Teammates / Teammate C Lead) â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ---
@@ -267,6 +267,7 @@ Every phase maps directly to `PRODUCTION_READINESS_PLAN.md` with explicit owners
 ### Phase 7: Modern UI/UX Redesign and Real-Time Telemetry Streaming
 - **Primary Lead:** Teammate C  
 - **Collaborator:** Teammate B (API SSE endpoint implementation)  
+- **Current Verification Status:** **VERIFIED COMPLETE** (Backend SSE verified with 7/7 tests passing; frontend build verified clean with exit code 0 via `tsc && vite build`; accessible DiffViewer with split/unified modes and safe clipboard integrated)
 - **Target Components & Files:**
   - `frontend/src/App.tsx`
   - `frontend/src/components/` (all components)
@@ -357,17 +358,17 @@ Every phase maps directly to `PRODUCTION_READINESS_PLAN.md` with explicit owners
 ## 4. Cross-Workstream Dependencies & Synchronization
 
 ```
-┌──────────────────────────────────────┬─────────────────────────┬────────────────────────┐
-│ Pre-Requisite Feature / Output       │ Required By Workstream  │ Target Milestone Phase │
-├──────────────────────────────────────┼─────────────────────────┼────────────────────────┤
-│ Container Sandbox Runner             │ Worker Queue Execution  │ Phase 1 ──> Phase 2    │
-│ Redis Worker Queue Service           │ Real-Time SSE Stream    │ Phase 2 ──> Phase 7    │
-│ Redis Worker Queue Service           │ Live Nebius Calls       │ Phase 2 ──> Phase 4    │
-│ GitHub OAuth 2.0 Web Flow            │ Frontend Login UX       │ Phase 3 ──> Phase 7    │
-│ OpenTelemetry / Prometheus Exporter  │ Operations Dashboard    │ Phase 6 ──> Phase 9    │
-│ Automated Backup / Restore Scripts   │ Staging Deployment      │ Phase 8 ──> Phase 9    │
-│ Staging Load & Security Soak Test    │ Production Cutover      │ Phase 9 ──> Phase 10   │
-└──────────────────────────────────────┴─────────────────────────┴────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚ Pre-Requisite Feature / Output       â”‚ Required By Workstream  â”‚ Target Milestone Phase â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚ Container Sandbox Runner             â”‚ Worker Queue Execution  â”‚ Phase 1 â”€â”€> Phase 2    â”‚
+â”‚ Redis Worker Queue Service           â”‚ Real-Time SSE Stream    â”‚ Phase 2 â”€â”€> Phase 7    â”‚
+â”‚ Redis Worker Queue Service           â”‚ Live Nebius Calls       â”‚ Phase 2 â”€â”€> Phase 4    â”‚
+â”‚ GitHub OAuth 2.0 Web Flow            â”‚ Frontend Login UX       â”‚ Phase 3 â”€â”€> Phase 7    â”‚
+â”‚ OpenTelemetry / Prometheus Exporter  â”‚ Operations Dashboard    â”‚ Phase 6 â”€â”€> Phase 9    â”‚
+â”‚ Automated Backup / Restore Scripts   â”‚ Staging Deployment      â”‚ Phase 8 â”€â”€> Phase 9    â”‚
+â”‚ Staging Load & Security Soak Test    â”‚ Production Cutover      â”‚ Phase 9 â”€â”€> Phase 10   â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ### Pull Request & Review Rules

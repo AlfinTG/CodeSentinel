@@ -190,3 +190,31 @@ async def get_installation_access_token(
         raise GitHubAuthError("Installation access token response missing 'token'")
 
     return access_token
+
+def get_installation_access_token_sync(
+    installation_id: int,
+    jwt_token: str | None = None,
+) -> str:
+    """Synchronously generate an installation access token for background worker execution."""
+    token = jwt_token or generate_github_app_jwt()
+    url = f"https://api.github.com/app/installations/{installation_id}/access_tokens"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "CodeSentinel-App",
+    }
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            resp = client.post(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        logger.error("Failed to create installation access token: %s", type(exc).__name__)
+        raise GitHubAuthError("Failed to create installation access token") from exc
+
+    access_token = data.get("token")
+    if not access_token:
+        raise GitHubAuthError("Installation access token response missing 'token'")
+
+    return access_token
