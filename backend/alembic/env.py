@@ -12,6 +12,7 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 from app.core.config import settings  # noqa: E402
+from app.core.lifecycle import resolve_secrets_and_validate  # noqa: E402
 from app.models import Base  # noqa: E402
 
 # this is the Alembic Config object, which provides
@@ -25,13 +26,14 @@ if config.config_file_name is not None:
 # Set model metadata
 target_metadata = Base.metadata
 
-# Override sqlalchemy.url with dynamic application settings
+# Initial fallback URL in alembic config for offline inspection
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = config.get_main_option("sqlalchemy.url")
+    resolve_secrets_and_validate()
+    url = settings.DATABASE_URL
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -45,6 +47,7 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
+    resolve_secrets_and_validate()
     configuration = config.get_section(config.config_ini_section, {})
     configuration["sqlalchemy.url"] = settings.DATABASE_URL
     connectable = engine_from_config(

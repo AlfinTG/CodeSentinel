@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, PrivateAttr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -107,6 +107,99 @@ class Settings(BaseSettings):
     # In production, this must be explicitly configured to prevent arbitrary host mounts.
     RUNNER_WORKSPACE_ROOT: str = ""
 
+    # Secret Management & KMS Integration (Phase 5)
+    SECRET_PROVIDER: Literal[
+        "env",
+        "memory",
+        "aws_secrets_manager",
+        "gcp_secret_manager",
+        "vault",
+    ] = "env"
+    SECRET_MANAGER_SECRET_ID: str = ""
+    VAULT_ADDR: str = ""
+    VAULT_TOKEN: str = ""
+    # Cloud Secret Manager & Infrastructure KMS attribution.
+    # Note: CodeSentinel retrieves managed secrets via Cloud Secret Managers
+    # (AWS Secrets Manager, GCP Secret Manager, or HashiCorp Vault). In cloud infrastructure,
+    # those secrets may be encrypted at rest using Cloud KMS keys.
+    # CodeSentinel does not perform direct application-level KMS envelope encryption (e.g. kms:Decrypt).
+    KMS_KEY_ID: str = ""
+
+    _secrets_resolved: bool = PrivateAttr(default=False)
+
+    def initialize_secrets(self, provider: object | None = None) -> dict[str, str]:
+        """Resolve secrets dynamically from the configured KMS/Secret provider."""
+        from app.core.secrets import resolve_and_inject_secrets
+
+        resolved = resolve_and_inject_secrets(self, provider=provider)  # type: ignore[arg-type]
+        self._secrets_resolved = True
+        return resolved
+
+    def validate_production_secrets(self) -> None:
+        """Validate production secrets for cryptographic strength and absence of development defaults."""
+        db_url = self.DATABASE_URL.lower()
+        if (
+            "codesentinel_password" in db_url
+            or "codesentinel_dev" in db_url
+            or db_url.startswith("sqlite")
+            or "sqlite+aiosqlite" in db_url
+        ):
+            raise ValueError(
+                "Insecure configuration: DATABASE_URL retains default development credentials, "
+                "database name, or SQLite in production."
+            )
+
+        session_key = self.SESSION_SECRET_KEY.strip()
+        if not session_key:
+            raise ValueError(
+                "Insecure configuration: SESSION_SECRET_KEY must not be empty or whitespace in production."
+            )
+        if (
+            session_key == "development-secret-key-replace-in-production-32-chars-min"
+            or len(session_key) < 32
+        ):
+            raise ValueError(
+                "Insecure configuration: SESSION_SECRET_KEY must not use default development value and "
+                "must be at least 32 characters in production."
+            )
+
+        webhook_secret = self.GITHUB_WEBHOOK_SECRET.strip()
+        if not webhook_secret:
+            raise ValueError(
+                "Insecure configuration: GITHUB_WEBHOOK_SECRET must not be empty or whitespace in production."
+            )
+        if webhook_secret == "development-webhook-secret":
+            raise ValueError(
+                "Insecure configuration: GITHUB_WEBHOOK_SECRET must not use default development value in production."
+            )
+        if len(webhook_secret) < 32:
+            raise ValueError(
+                "Insecure configuration: GITHUB_WEBHOOK_SECRET must be at least 32 characters in production."
+            )
+
+    def validate_provider_configuration(self) -> None:
+        """Validate that required parameters for cloud KMS providers are present in production."""
+        if self.SECRET_PROVIDER == "vault" and not self.VAULT_ADDR:
+            raise ValueError(
+                "Insecure configuration: VAULT_ADDR must be configured when SECRET_PROVIDER is 'vault'."
+            )
+        if (
+            self.SECRET_PROVIDER in ("aws", "aws_secrets_manager")
+            and not self.SECRET_MANAGER_SECRET_ID
+        ):
+            raise ValueError(
+                "Insecure configuration: SECRET_MANAGER_SECRET_ID must be configured "
+                "when SECRET_PROVIDER is 'aws_secrets_manager'."
+            )
+        if (
+            self.SECRET_PROVIDER in ("gcp", "gcp_secret_manager")
+            and not self.SECRET_MANAGER_SECRET_ID
+        ):
+            raise ValueError(
+                "Insecure configuration: SECRET_MANAGER_SECRET_ID must be configured "
+                "when SECRET_PROVIDER is 'gcp_secret_manager'."
+            )
+
     @model_validator(mode="after")
     def validate_production_security(self) -> "Settings":
         if self.CODESENTINEL_ENV == "production":
@@ -120,6 +213,15 @@ class Settings(BaseSettings):
                     "Insecure configuration: RUNNER_WORKSPACE_ROOT must be explicitly configured in production "
                     "to enforce strict workspace boundary containment."
                 )
+            if not self.COOKIE_SECURE:
+                raise ValueError(
+                    "Insecure configuration: COOKIE_SECURE must be True in production to ensure "
+                    "session cookies are transmitted only over HTTPS."
+                )
+            if self.SECRET_PROVIDER == "env" or self._secrets_resolved:
+                self.validate_production_secrets()
+            else:
+                self.validate_provider_configuration()
         return self
 
     @property
