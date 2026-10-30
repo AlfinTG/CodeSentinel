@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from datetime import UTC, datetime
 import logging
 import re
 import sys
 import time
+from datetime import UTC, datetime
 
 import httpx
 
@@ -86,7 +86,7 @@ async def run_soak_iteration(client: httpx.AsyncClient, base_url: str, state: So
             state.health_failures += 1
             iteration_ok = False
             logger.warning("Iteration %d: Health probe returned status %d", state.iterations, resp_health.status_code)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         state.health_failures += 1
         iteration_ok = False
         logger.error("Iteration %d: Health probe exception: %s", state.iterations, exc)
@@ -101,7 +101,7 @@ async def run_soak_iteration(client: httpx.AsyncClient, base_url: str, state: So
             state.metrics_failures += 1
             iteration_ok = False
             logger.warning("Iteration %d: Metrics probe returned status %d", state.iterations, resp_metrics.status_code)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         state.metrics_failures += 1
         iteration_ok = False
         logger.error("Iteration %d: Metrics probe exception: %s", state.iterations, exc)
