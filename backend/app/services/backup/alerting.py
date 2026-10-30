@@ -126,11 +126,17 @@ def format_slack_payload(alert_data: dict[str, Any]) -> dict[str, Any]:
     ]
 
     if "backup_file" in alert_data:
-        fields.append({"title": "Backup File", "value": str(alert_data["backup_file"]), "short": True})
+        fields.append(
+            {"title": "Backup File", "value": str(alert_data["backup_file"]), "short": True}
+        )
     if "file_size_bytes" in alert_data:
-        fields.append({"title": "File Size", "value": f"{alert_data['file_size_bytes']} bytes", "short": True})
+        fields.append(
+            {"title": "File Size", "value": f"{alert_data['file_size_bytes']} bytes", "short": True}
+        )
     if "sha256" in alert_data:
-        fields.append({"title": "SHA-256", "value": str(alert_data["sha256"])[:16] + "...", "short": True})
+        fields.append(
+            {"title": "SHA-256", "value": str(alert_data["sha256"])[:16] + "...", "short": True}
+        )
     if "error" in alert_data:
         fields.append({"title": "Error Details", "value": str(alert_data["error"]), "short": False})
 
@@ -255,7 +261,9 @@ def send_backup_alert(
     return False
 
 
-def ping_snitch(snitch_url: str | None, event: str = "success", timeout_seconds: float = 10.0) -> bool:
+def ping_snitch(
+    snitch_url: str | None, event: str = "success", timeout_seconds: float = 10.0
+) -> bool:
     """Ping a dead-man's-snitch service (Healthchecks.io / Cronitor / Better Uptime).
 
     event can be 'start', 'success' (default ping), or 'fail'.

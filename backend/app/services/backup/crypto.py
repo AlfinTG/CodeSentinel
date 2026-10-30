@@ -74,7 +74,9 @@ def parse_key(key_input: str | bytes) -> bytes:
     if isinstance(key_input, bytes):
         if len(key_input) == 32:
             return key_input
-        raise BackupCryptoError(f"Invalid encryption key byte length: got {len(key_input)}, expected 32.")
+        raise BackupCryptoError(
+            f"Invalid encryption key byte length: got {len(key_input)}, expected 32."
+        )
 
     raise BackupCryptoError("Encryption key must be provided as string or bytes.")
 
@@ -142,7 +144,9 @@ def decrypt_file(source_path: str | Path, dest_path: str | Path, key: bytes | st
 def main():
     """CLI helper for backup encryption and decryption."""
     if len(sys.argv) < 2:
-        print("Usage: python -m app.services.backup.crypto [generate-key | encrypt | decrypt] [args...]")
+        print(
+            "Usage: python -m app.services.backup.crypto [generate-key | encrypt | decrypt] [args...]"
+        )
         sys.exit(1)
 
     cmd = sys.argv[1].lower()
@@ -152,7 +156,9 @@ def main():
 
     if cmd in ("encrypt", "decrypt"):
         if len(sys.argv) < 5:
-            print(f"Usage: python -m app.services.backup.crypto {cmd} <source_file> <dest_file> <key_or_env_var>")
+            print(
+                f"Usage: python -m app.services.backup.crypto {cmd} <source_file> <dest_file> <key_or_env_var>"
+            )
             sys.exit(1)
         src = sys.argv[2]
         dst = sys.argv[3]
@@ -177,4 +183,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

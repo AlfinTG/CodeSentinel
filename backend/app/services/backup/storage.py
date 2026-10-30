@@ -48,7 +48,9 @@ def sign_sigv4(key: bytes, msg: str) -> bytes:
     return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
 
 
-def get_signature_key(secret_key: str, date_stamp: str, region_name: str, service_name: str) -> bytes:
+def get_signature_key(
+    secret_key: str, date_stamp: str, region_name: str, service_name: str
+) -> bytes:
     """Derive AWS SigV4 signing key."""
     k_date = sign_sigv4(("AWS4" + secret_key).encode("utf-8"), date_stamp)
     k_region = sign_sigv4(k_date, region_name)
@@ -132,7 +134,9 @@ class S3BackupStorage:
         )
 
         signing_key = get_signature_key(self.secret_access_key, date_stamp, self.region, "s3")
-        signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+        signature = hmac.new(
+            signing_key, string_to_sign.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
 
         authorization_header = (
             f"{algorithm} Credential={self.access_key_id}/{credential_scope}, "
@@ -154,7 +158,9 @@ class S3BackupStorage:
         extra_headers = {"content-type": content_type}
         query_params = {"uploads": ""}
 
-        headers = self._build_sigv4_headers("POST", canonical_uri, empty_hash, extra_headers, query_params)
+        headers = self._build_sigv4_headers(
+            "POST", canonical_uri, empty_hash, extra_headers, query_params
+        )
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
                 resp = client.post(full_url, headers=headers)
@@ -162,7 +168,11 @@ class S3BackupStorage:
                     match = re.search(r"<UploadId>(.*?)</UploadId>", resp.text)
                     if match:
                         return match.group(1)
-                logger.error("Failed to initiate S3 multipart upload: %d %s", resp.status_code, resp.text[:200])
+                logger.error(
+                    "Failed to initiate S3 multipart upload: %d %s",
+                    resp.status_code,
+                    resp.text[:200],
+                )
                 return None
         except Exception as exc:
             logger.error("Exception initiating multipart upload: %s", exc)
@@ -178,17 +188,26 @@ class S3BackupStorage:
         """Upload an individual chunk/part in an S3 multipart upload session."""
         canonical_uri = "/" + remote_key.lstrip("/")
         query_params = {"partNumber": str(part_number), "uploadId": upload_id}
-        full_url = f"{self.endpoint_url}{canonical_uri}?partNumber={part_number}&uploadId={upload_id}"
+        full_url = (
+            f"{self.endpoint_url}{canonical_uri}?partNumber={part_number}&uploadId={upload_id}"
+        )
         payload_hash = hashlib.sha256(data).hexdigest()
         extra_headers = {"content-length": str(len(data))}
 
-        headers = self._build_sigv4_headers("PUT", canonical_uri, payload_hash, extra_headers, query_params)
+        headers = self._build_sigv4_headers(
+            "PUT", canonical_uri, payload_hash, extra_headers, query_params
+        )
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
                 resp = client.put(full_url, headers=headers, content=data)
                 if resp.status_code in (200, 201):
                     return resp.headers.get("etag", "").strip('"')
-                logger.error("Failed to upload part %d: %d %s", part_number, resp.status_code, resp.text[:200])
+                logger.error(
+                    "Failed to upload part %d: %d %s",
+                    part_number,
+                    resp.status_code,
+                    resp.text[:200],
+                )
                 return None
         except Exception as exc:
             logger.error("Exception uploading part %d: %s", part_number, exc)
@@ -217,19 +236,22 @@ class S3BackupStorage:
             "content-length": str(len(payload_bytes)),
         }
 
-        headers = self._build_sigv4_headers("POST", canonical_uri, payload_hash, extra_headers, query_params)
+        headers = self._build_sigv4_headers(
+            "POST", canonical_uri, payload_hash, extra_headers, query_params
+        )
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
                 resp = client.post(full_url, headers=headers, content=payload_bytes)
                 if resp.status_code == 200:
                     etag_match = re.search(r"<ETag>(.*?)</ETag>", resp.text)
                     return etag_match.group(1).strip('"') if etag_match else "completed"
-                logger.error("Failed to complete multipart upload: %d %s", resp.status_code, resp.text[:200])
+                logger.error(
+                    "Failed to complete multipart upload: %d %s", resp.status_code, resp.text[:200]
+                )
                 return None
         except Exception as exc:
             logger.error("Exception completing multipart upload: %s", exc)
             return None
-
 
     def delete_object(self, remote_key: str) -> bool:
         """Delete an object from the bucket using a signed DELETE request.
@@ -255,7 +277,9 @@ class S3BackupStorage:
         full_url = f"{self.endpoint_url}{canonical_uri}?uploadId={upload_id}"
         empty_hash = hashlib.sha256(b"").hexdigest()
 
-        headers = self._build_sigv4_headers("DELETE", canonical_uri, empty_hash, query_params=query_params)
+        headers = self._build_sigv4_headers(
+            "DELETE", canonical_uri, empty_hash, query_params=query_params
+        )
         try:
             with httpx.Client(timeout=self.timeout_seconds) as client:
                 resp = client.delete(full_url, headers=headers)
@@ -331,7 +355,9 @@ class S3BackupStorage:
                     sha256=payload_hash,
                 )
             except Exception as exc:
-                logger.warning("Multipart upload failed; cleaning up incomplete upload %s", upload_id)
+                logger.warning(
+                    "Multipart upload failed; cleaning up incomplete upload %s", upload_id
+                )
                 self.abort_multipart_upload(remote_key, upload_id)
                 return RemoteUploadResult(
                     success=False,
@@ -347,7 +373,9 @@ class S3BackupStorage:
             "content-type": content_type,
             "content-length": str(size_bytes),
         }
-        signed_headers = self._build_sigv4_headers("PUT", canonical_uri, payload_hash, extra_headers)
+        signed_headers = self._build_sigv4_headers(
+            "PUT", canonical_uri, payload_hash, extra_headers
+        )
 
         try:
             with open(file_path, "rb") as f, httpx.Client(timeout=self.timeout_seconds) as client:
