@@ -1,10 +1,13 @@
 """Run, check, evidence, and analysis endpoints matching API_CONTRACTS.md."""
 
+import asyncio
+import json
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy.orm import Session
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import get_authorized_project, get_current_user
 from app.db.session import get_db
@@ -12,7 +15,7 @@ from app.models.analysis import Analysis
 from app.models.evidence import EvidenceItem
 from app.models.job import Job, JobStatus, JobType
 from app.models.project import Project
-from app.models.run import CheckRun, LifecycleStatus, Run, TestOutcome
+from app.models.run import AnalysisOutcome, CheckRun, LifecycleStatus, Run, TestOutcome
 from app.models.user import User
 from app.schemas.analysis import AnalysisRead
 from app.schemas.common import PaginatedResponse
@@ -348,3 +351,129 @@ def cancel_run(
         "test_outcome": run.test_outcome,
         "message": "Run cancelled successfully",
     }
+
+
+@router.get("/runs/{run_id}/events")
+async def stream_run_events(
+    run_id: str,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    max_duration_seconds: float = Query(300.0, ge=0.01, le=3600.0),
+    poll_interval: float = Query(0.8, ge=0.01, le=10.0),
+):
+    """Server-Sent Events (SSE) stream for real-time run execution updates and check output.
+
+    Streams run status changes, check run results, evidence updates, and analysis state transitions.
+    Terminates cleanly when the run reaches terminal states or client disconnects.
+    """
+    _authorize_run_access(run_id, current_user, db, request)
+    session_factory = sessionmaker(bind=db.get_bind())
+    # Release initial request-scoped authorization session back to connection pool
+    # so long-lived streaming does not hold an idle database connection.
+    db.close()
+
+    async def event_generator():
+        last_state = None
+        elapsed = 0.0
+
+        try:
+            while elapsed < max_duration_seconds:
+                if await request.is_disconnected():
+                    break
+
+                with session_factory() as session:
+                    current_run = session.query(Run).filter(Run.id == run_id).first()
+                    if not current_run:
+                        yield f"event: error\ndata: {json.dumps({'error': 'run_not_found'})}\n\n"
+                        break
+
+                    checks = session.query(CheckRun).filter(CheckRun.run_id == run_id).all()
+                    evidence_count = (
+                        session.query(EvidenceItem).filter(EvidenceItem.run_id == run_id).count()
+                    )
+                    analysis = (
+                        session.query(Analysis)
+                        .filter(Analysis.run_id == run_id)
+                        .order_by(Analysis.attempt_number.desc())
+                        .first()
+                    )
+
+                    current_snapshot = {
+                        "run_id": current_run.id,
+                        "lifecycle_status": current_run.lifecycle_status,
+                        "test_outcome": current_run.test_outcome,
+                        "analysis_outcome": current_run.analysis_outcome,
+                        "started_at": (
+                            current_run.started_at.isoformat()
+                            if current_run.started_at
+                            else None
+                        ),
+                        "completed_at": (
+                            current_run.completed_at.isoformat()
+                            if current_run.completed_at
+                            else None
+                        ),
+                        "checks": [
+                            {
+                                "id": c.id,
+                                "check_key": c.check_key,
+                                "check_name": c.check_name,
+                                "status": c.status,
+                                "exit_code": c.exit_code,
+                                "duration_ms": c.duration_ms,
+                            }
+                            for c in checks
+                        ],
+                        "evidence_count": evidence_count,
+                        "analysis": (
+                            {
+                                "id": analysis.id,
+                                "status": analysis.status,
+                                "safe_error_code": analysis.safe_error_code,
+                                "has_result": analysis.result_json is not None,
+                            }
+                            if analysis
+                            else None
+                        ),
+                    }
+
+                    if current_snapshot != last_state:
+                        last_state = current_snapshot
+                        yield f"event: run_update\ndata: {json.dumps(current_snapshot)}\n\n"
+                    else:
+                        yield ": ping\n\n"
+
+                    terminal_lifecycle = current_run.lifecycle_status in {
+                        LifecycleStatus.COMPLETED.value,
+                        LifecycleStatus.FAILED.value,
+                        LifecycleStatus.TIMED_OUT.value,
+                        LifecycleStatus.CANCELLED.value,
+                        LifecycleStatus.INCONCLUSIVE.value,
+                    }
+                    terminal_analysis = current_run.analysis_outcome in {
+                        AnalysisOutcome.NOT_REQUESTED.value,
+                        AnalysisOutcome.SUCCEEDED.value,
+                        AnalysisOutcome.UNAVAILABLE.value,
+                        AnalysisOutcome.INVALID_RESPONSE.value,
+                    }
+
+                    if terminal_lifecycle and terminal_analysis:
+                        yield f"event: complete\ndata: {json.dumps({'message': 'Run execution finished', 'status': current_run.lifecycle_status})}\n\n"
+                        break
+
+                await asyncio.sleep(poll_interval)
+                elapsed += poll_interval
+
+        except asyncio.CancelledError:
+            pass
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

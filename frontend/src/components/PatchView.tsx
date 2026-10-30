@@ -3,14 +3,13 @@ import {
   Wrench,
   CheckCircle2,
   XCircle,
-  Copy,
-  Check,
   Shield,
   Sparkles,
   RefreshCw,
   Terminal,
 } from 'lucide-react'
 import { PatchAttempt, Run } from '../types'
+import { DiffViewer } from './DiffViewer'
 
 interface PatchViewProps {
   run: Run
@@ -28,56 +27,13 @@ export const PatchView: React.FC<PatchViewProps> = ({
   onProposePatch,
 }) => {
   const [instructions, setInstructions] = useState<string>('')
-  const [copiedId, setCopiedId] = useState<string | null>(null)
   const [selectedAttemptId, setSelectedAttemptId] = useState<string | null>(null)
-
-  const copyDiff = (id: string, text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopiedId(id)
-    setTimeout(() => setCopiedId(null), 1500)
-  }
 
   const activeAttempt =
     patchAttempts.find((a) => a.id === selectedAttemptId) || patchAttempts[0] || null
 
-  const renderDiffLine = (line: string, index: number) => {
-    let bg = 'transparent'
-    let color = '#e2e8f0'
-
-    if (line.startsWith('+++') || line.startsWith('---')) {
-      color = 'var(--accent-cyan)'
-      bg = 'rgba(6, 182, 212, 0.08)'
-    } else if (line.startsWith('@@')) {
-      color = 'var(--text-subtle)'
-      bg = 'rgba(255, 255, 255, 0.03)'
-    } else if (line.startsWith('+')) {
-      color = '#34d399'
-      bg = 'rgba(16, 185, 129, 0.12)'
-    } else if (line.startsWith('-')) {
-      color = '#f87171'
-      bg = 'rgba(239, 68, 68, 0.12)'
-    }
-
-    return (
-      <div
-        key={index}
-        style={{
-          background: bg,
-          color,
-          padding: '1px 8px',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '12px',
-          lineHeight: 1.5,
-          whiteSpace: 'pre',
-        }}
-      >
-        {line}
-      </div>
-    )
-  }
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }} role="region" aria-label="Candidate Patch Verification">
       {/* Strict Security Invariant Callout */}
       <div
         style={{
@@ -89,6 +45,7 @@ export const PatchView: React.FC<PatchViewProps> = ({
           alignItems: 'center',
           gap: '12px',
         }}
+        role="alert"
       >
         <Shield size={20} color="var(--status-timeout-text)" />
         <div style={{ fontSize: '13px', color: 'var(--text-main)', lineHeight: 1.4 }}>
@@ -126,6 +83,7 @@ export const PatchView: React.FC<PatchViewProps> = ({
             value={instructions}
             onChange={(e) => setInstructions(e.target.value)}
             placeholder="Optional instructions (e.g. 'Preserve coupon type signature')"
+            aria-label="Patch guidance instructions"
             style={{
               flex: 1,
               minWidth: '240px',
@@ -141,6 +99,7 @@ export const PatchView: React.FC<PatchViewProps> = ({
           <button
             onClick={() => onProposePatch(instructions)}
             disabled={triggering || run.test_outcome === 'pending'}
+            aria-label="Propose and verify candidate patch"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -168,7 +127,7 @@ export const PatchView: React.FC<PatchViewProps> = ({
 
       {/* Attempts History */}
       {loading ? (
-        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }}>
+        <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)' }} role="status">
           Loading candidate patch attempts...
         </div>
       ) : patchAttempts.length === 0 ? (
@@ -188,34 +147,31 @@ export const PatchView: React.FC<PatchViewProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Attempts Selector Tabs if multiple */}
           {patchAttempts.length > 1 && (
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto' }}>
-              {patchAttempts.map((att, idx) => (
-                <button
-                  key={att.id}
-                  onClick={() => setSelectedAttemptId(att.id)}
-                  style={{
-                    padding: '6px 12px',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    background:
-                      (activeAttempt?.id === att.id)
-                        ? 'var(--bg-surface-elevated)'
-                        : 'transparent',
-                    border:
-                      (activeAttempt?.id === att.id)
-                        ? '1px solid var(--accent-cyan)'
-                        : '1px solid var(--bg-border)',
-                    color:
-                      (activeAttempt?.id === att.id)
-                        ? 'var(--accent-cyan)'
-                        : 'var(--text-muted)',
-                  }}
-                >
-                  Attempt #{patchAttempts.length - idx} ({att.status})
-                </button>
-              ))}
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto' }} role="tablist" aria-label="Patch attempt versions">
+              {patchAttempts.map((att, idx) => {
+                const isSelected = activeAttempt?.id === att.id
+                return (
+                  <button
+                    key={att.id}
+                    onClick={() => setSelectedAttemptId(att.id)}
+                    role="tab"
+                    aria-selected={isSelected}
+                    aria-label={`Attempt ${patchAttempts.length - idx}, status ${att.status}`}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: '12px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      background: isSelected ? 'var(--bg-surface-elevated)' : 'transparent',
+                      border: isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--bg-border)',
+                      color: isSelected ? 'var(--accent-cyan)' : 'var(--text-muted)',
+                    }}
+                  >
+                    Attempt #{patchAttempts.length - idx} ({att.status})
+                  </button>
+                )
+              })}
             </div>
           )}
 
@@ -227,9 +183,12 @@ export const PatchView: React.FC<PatchViewProps> = ({
                 borderRadius: 'var(--radius-lg)',
                 border: '1px solid var(--bg-border)',
                 overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
               }}
             >
-              {/* Header */}
+              {/* Header Status Bar */}
               <div
                 style={{
                   padding: '14px 18px',
@@ -286,53 +245,27 @@ export const PatchView: React.FC<PatchViewProps> = ({
                     Digest: {activeAttempt.candidate_digest.substring(0, 8)} &middot;{' '}
                     {activeAttempt.workspace_reference}
                   </span>
-                  <button
-                    onClick={() => copyDiff(activeAttempt.id, activeAttempt.diff_content || '')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontSize: '11px',
-                      background: 'transparent',
-                      border: '1px solid var(--bg-border)',
-                      padding: '3px 8px',
-                      borderRadius: 'var(--radius-sm)',
-                      color:
-                        copiedId === activeAttempt.id
-                          ? 'var(--status-pass-text)'
-                          : 'var(--text-muted)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {copiedId === activeAttempt.id ? <Check size={12} /> : <Copy size={12} />}
-                    <span>{copiedId === activeAttempt.id ? 'Copied Diff' : 'Copy Diff'}</span>
-                  </button>
                 </div>
               </div>
 
-              {/* Diff Container */}
+              {/* Advanced Syntax-Highlighted Diff Viewer with Unified/Split View */}
               {activeAttempt.diff_content ? (
-                <div
-                  style={{
-                    padding: '12px',
-                    background: '#070a10',
-                    borderBottom: '1px solid var(--bg-border)',
-                    overflowX: 'auto',
-                  }}
-                >
-                  {activeAttempt.diff_content.split('\n').map((line, idx) =>
-                    renderDiffLine(line, idx)
-                  )}
+                <div style={{ padding: '0 16px' }}>
+                  <DiffViewer
+                    diffText={activeAttempt.diff_content}
+                    title={activeAttempt.summary || `Candidate Patch Diff (${activeAttempt.candidate_digest.substring(0, 8)})`}
+                    initialMode="unified"
+                  />
                 </div>
               ) : (
-                <div style={{ padding: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>
-                  No diff content recorded.
+                <div style={{ padding: '24px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+                  No diff content recorded for this patch attempt.
                 </div>
               )}
 
               {/* Isolated Verification Results */}
               {activeAttempt.validation_results && (
-                <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Terminal size={14} color="var(--accent-cyan)" />
                     <span style={{ fontSize: '13px', fontWeight: 700 }}>
@@ -370,8 +303,8 @@ export const PatchView: React.FC<PatchViewProps> = ({
                   </div>
 
                   {activeAttempt.validation_results.failure_reason && (
-                    <div style={{ fontSize: '12px', color: 'var(--status-fail-text)' }}>
-                      Failure reason: {activeAttempt.validation_results.failure_reason}
+                    <div style={{ color: 'var(--status-fail-text)', fontSize: '12px', fontStyle: 'italic', marginTop: '4px' }}>
+                      Verification Note: {activeAttempt.validation_results.failure_reason}
                     </div>
                   )}
                 </div>

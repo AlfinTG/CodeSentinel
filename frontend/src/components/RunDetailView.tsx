@@ -11,6 +11,7 @@ import {
   Terminal,
   Brain,
   Wrench,
+  Radio,
 } from 'lucide-react'
 import { RunDetail, CheckRun, EvidenceItem, Analysis, PatchAttempt } from '../types'
 import { StatusBadge } from './StatusBadge'
@@ -28,6 +29,8 @@ interface RunDetailViewProps {
   triggeringAnalysis: boolean
   triggeringPatch: boolean
   cancellingRun: boolean
+  isStreaming?: boolean
+  isConnected?: boolean
   onRequestAnalysis: () => void
   onRetryAnalysis: () => void
   onProposePatch: (instructions?: string) => void
@@ -44,6 +47,8 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
   triggeringAnalysis,
   triggeringPatch,
   cancellingRun,
+  isStreaming = false,
+  isConnected = false,
   onRequestAnalysis,
   onRetryAnalysis,
   onProposePatch,
@@ -53,10 +58,16 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
   const [highlightedEvidenceId, setHighlightedEvidenceId] = useState<string | null>(null)
   const [copiedSha, setCopiedSha] = useState<boolean>(false)
 
-  const copySha = () => {
-    navigator.clipboard.writeText(run.head_sha)
-    setCopiedSha(true)
-    setTimeout(() => setCopiedSha(false), 1500)
+  const copySha = async () => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(run.head_sha)
+        setCopiedSha(true)
+        setTimeout(() => setCopiedSha(false), 1500)
+      }
+    } catch (err) {
+      console.warn('Failed to copy SHA to clipboard:', err)
+    }
   }
 
   const handleSelectEvidenceId = (evidenceId: string) => {
@@ -75,6 +86,19 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
     run.lifecycle_status === 'queued' ||
     run.lifecycle_status === 'received'
 
+  const tabs: Array<'evidence' | 'analysis' | 'patch'> = ['evidence', 'analysis', 'patch']
+
+  const handleKeyDownTabs = (e: React.KeyboardEvent) => {
+    const currentIndex = tabs.indexOf(activeTab)
+    if (e.key === 'ArrowRight') {
+      const nextIndex = (currentIndex + 1) % tabs.length
+      setActiveTab(tabs[nextIndex])
+    } else if (e.key === 'ArrowLeft') {
+      const prevIndex = (currentIndex - 1 + tabs.length) % tabs.length
+      setActiveTab(tabs[prevIndex])
+    }
+  }
+
   return (
     <div
       style={{
@@ -85,6 +109,8 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
         display: 'flex',
         flexDirection: 'column',
       }}
+      role="region"
+      aria-label={`Details for Run ${run.id.substring(0, 8)}`}
     >
       {/* Run Header */}
       <div
@@ -99,12 +125,62 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
       >
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.01em' }}>
                 Run {run.id.substring(0, 8)}
               </span>
               <StatusBadge type="test" value={run.test_outcome} size="md" />
               <StatusBadge type="analysis" value={run.analysis_outcome} size="md" />
+
+              {/* Real-time SSE Telemetry Indicator */}
+              {isStreaming ? (
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '3px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    background: 'rgba(6, 182, 212, 0.12)',
+                    border: '1px solid rgba(6, 182, 212, 0.3)',
+                    color: 'var(--accent-cyan)',
+                  }}
+                  role="status"
+                  aria-live="polite"
+                  title="Streaming real-time execution telemetry via Server-Sent Events"
+                >
+                  <span
+                    className="live-pulse"
+                    style={{
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      background: 'var(--accent-cyan)',
+                      display: 'inline-block',
+                    }}
+                  />
+                  <span>Live Telemetry</span>
+                </div>
+              ) : isConnected ? (
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '3px 8px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '11px',
+                    color: 'var(--text-subtle)',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--bg-border)',
+                  }}
+                >
+                  <Radio size={12} color="var(--accent-cyan)" />
+                  <span>Stream Idle</span>
+                </div>
+              ) : null}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
@@ -121,6 +197,8 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
                     cursor: 'pointer',
                     padding: '2px',
                   }}
+                  title="Copy full commit SHA"
+                  aria-label="Copy commit SHA"
                 >
                   {copiedSha ? <Check size={12} /> : <Copy size={12} />}
                 </button>
@@ -159,31 +237,25 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
                   fontSize: '12px',
                   padding: '6px 12px',
                   borderRadius: 'var(--radius-sm)',
+                  fontWeight: 600,
                   cursor: 'pointer',
                 }}
+                aria-label="Cancel active run"
               >
-                <Ban size={13} />
+                <Ban size={14} />
                 <span>{cancellingRun ? 'Cancelling...' : 'Cancel Run'}</span>
               </button>
             )}
           </div>
         </div>
 
-        {/* Configured Checks Snapshot Bar */}
+        {/* Check summary pills */}
         {checks.length > 0 && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '6px',
-              paddingTop: '10px',
-              borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-            }}
-          >
-            <span style={{ fontSize: '11px', color: 'var(--text-subtle)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-subtle)' }}>
               Executed Checks
             </span>
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {checks.map((chk) => (
                 <div
                   key={chk.id}
@@ -217,7 +289,7 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
         )}
       </div>
 
-      {/* View Tabs */}
+      {/* View Tabs with Accessible role="tablist" */}
       <div
         style={{
           borderBottom: '1px solid var(--bg-border)',
@@ -226,9 +298,17 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
           padding: '0 24px',
           gap: '24px',
         }}
+        role="tablist"
+        aria-label="Run investigation views"
+        onKeyDown={handleKeyDownTabs}
       >
         <button
           onClick={() => setActiveTab('evidence')}
+          role="tab"
+          id="tab-evidence"
+          aria-controls="panel-evidence"
+          aria-selected={activeTab === 'evidence'}
+          tabIndex={activeTab === 'evidence' ? 0 : -1}
           style={{
             background: 'transparent',
             border: 'none',
@@ -249,6 +329,11 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
 
         <button
           onClick={() => setActiveTab('analysis')}
+          role="tab"
+          id="tab-analysis"
+          aria-controls="panel-analysis"
+          aria-selected={activeTab === 'analysis'}
+          tabIndex={activeTab === 'analysis' ? 0 : -1}
           style={{
             background: 'transparent',
             border: 'none',
@@ -279,6 +364,11 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
 
         <button
           onClick={() => setActiveTab('patch')}
+          role="tab"
+          id="tab-patch"
+          aria-controls="panel-patch"
+          aria-selected={activeTab === 'patch'}
+          tabIndex={activeTab === 'patch' ? 0 : -1}
           style={{
             background: 'transparent',
             border: 'none',
@@ -311,33 +401,39 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
         </button>
       </div>
 
-      {/* Tab Content Body */}
+      {/* Tab Content Body with Accessible role="tabpanel" */}
       <div style={{ padding: '24px' }}>
         {activeTab === 'evidence' ? (
-          <EvidenceViewer
-            evidenceItems={evidence}
-            loading={loadingDetail}
-            highlightedEvidenceId={highlightedEvidenceId}
-            onClearHighlight={() => setHighlightedEvidenceId(null)}
-          />
+          <div role="tabpanel" id="panel-evidence" aria-labelledby="tab-evidence">
+            <EvidenceViewer
+              evidenceItems={evidence}
+              loading={loadingDetail}
+              highlightedEvidenceId={highlightedEvidenceId}
+              onClearHighlight={() => setHighlightedEvidenceId(null)}
+            />
+          </div>
         ) : activeTab === 'analysis' ? (
-          <AnalysisPanel
-            run={run}
-            analysis={analysis}
-            loading={loadingDetail}
-            triggering={triggeringAnalysis}
-            onRequestAnalysis={onRequestAnalysis}
-            onRetryAnalysis={onRetryAnalysis}
-            onSelectEvidenceId={handleSelectEvidenceId}
-          />
+          <div role="tabpanel" id="panel-analysis" aria-labelledby="tab-analysis">
+            <AnalysisPanel
+              run={run}
+              analysis={analysis}
+              loading={loadingDetail}
+              triggering={triggeringAnalysis}
+              onRequestAnalysis={onRequestAnalysis}
+              onRetryAnalysis={onRetryAnalysis}
+              onSelectEvidenceId={handleSelectEvidenceId}
+            />
+          </div>
         ) : (
-          <PatchView
-            run={run}
-            patchAttempts={patchAttempts}
-            loading={loadingDetail}
-            triggering={triggeringPatch}
-            onProposePatch={onProposePatch}
-          />
+          <div role="tabpanel" id="panel-patch" aria-labelledby="tab-patch">
+            <PatchView
+              run={run}
+              patchAttempts={patchAttempts}
+              loading={loadingDetail}
+              triggering={triggeringPatch}
+              onProposePatch={onProposePatch}
+            />
+          </div>
         )}
       </div>
     </div>

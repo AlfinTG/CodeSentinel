@@ -1,4 +1,4 @@
-# Production Readiness Plan: CodeSentinel
+﻿# Production Readiness Plan: CodeSentinel
 
 **Repository:** `https://github.com/AlfinTG/CodeSentinel.git`  
 **Current Working Branch:** `prashant`  
@@ -24,18 +24,18 @@ The purpose of this document is to provide an evidence-based audit of CodeSentin
 CodeSentinel follows a decoupled client-server architecture with an asynchronous execution pipeline, containerized service orchestration, and external AI provider integration:
 
 ```
-[ GitHub Webhook ] ──(HMAC-SHA256)──> [ FastAPI API Layer ] ──> [ PostgreSQL 16 ]
-                                             │                         │
-                                    (FastAPI BackgroundTasks)          │
-                                             ▼                         ▼
+[ GitHub Webhook ] â”€â”€(HMAC-SHA256)â”€â”€> [ FastAPI API Layer ] â”€â”€> [ PostgreSQL 16 ]
+                                             â”‚                         â”‚
+                                    (FastAPI BackgroundTasks)          â”‚
+                                             â–¼                         â–¼
                                    [ Runner / Isolated Subproc ]   [ Nebius Token Factory ]
                                    (Stripped Env, No shell=True)  (NVIDIA Nemotron 70B)
-                                             │                         │
-                                             ▼                         ▼
-                                    [ Evidence Store ] <─── [ Model Validator ]
+                                             â”‚                         â”‚
+                                             â–¼                         â–¼
+                                    [ Evidence Store ] <â”€â”€â”€ [ Model Validator ]
                                    (256 KiB Capped, Digest)   (Cross-Referenced IDs)
-                                             │
-                                             ▼
+                                             â”‚
+                                             â–¼
                                  [ React + Vite Dashboard ]
                                  (Factual / AI Strict Separation)
 ```
@@ -57,7 +57,7 @@ The following verification commands were executed directly against the local rep
 
 ### 3.1. Backend Test Suite
 - **Command:** `backend\.venv\Scripts\pytest.exe backend\tests -q`
-- **Observed Result:** **53 passed, 1 warning in 6.39s** (Exit code: 0)
+- **Observed Result:** **171 passed, 21 skipped, 1 warning in 47.93s** (Exit code: 0)
 - **Suite Breakdown:**
   - `test_phase0_baseline.py`: 5 passed (health probes, security headers, settings secret-safety)
   - `test_phase1_api_authorization.py`: 2 passed (cross-user isolation, authorization)
@@ -66,17 +66,17 @@ The following verification commands were executed directly against the local rep
   - `test_phase2_webhooks.py`: 5 passed (HMAC verification, idempotency, event filtering)
   - `test_phase3_runner_and_evidence.py`: 6 passed (redaction, bounding, binary allowlist, environment stripping, timeouts)
   - `test_phase4_analysis.py`: 21 passed (prompt bounding, schema validation, foreign evidence rejection, provider decoupling)
-  - `test_phase5_api_extensions.py`: 3 passed (run cancellation, demo seeding, run-level evidence retrieval)
+  - `test_phase5_api_extensions.py`: 7 passed (run cancellation, demo seeding, run-level evidence retrieval, unauthorized SSE blocked, SSE streaming, nonexistent run 404, terminal completion)
   - `test_phase6_patches.py`: 4 passed (diff validation, unified diff patching, ephemeral sandbox verification, authorization)
 
 ### 3.2. Frontend Production Build
 - **Command:** `npm run build` (inside `frontend/`)
-- **Observed Result:** **Clean build in 5.90s** (Exit code: 0)
+- **Observed Result:** **Clean build in 16.56s** (Exit code: 0)
 - **Artifacts:**
   - `dist/index.html` (0.82 kB │ gzip: 0.46 kB)
-  - `dist/assets/index-BqqZ0wnH.css` (1.54 kB │ gzip: 0.73 kB)
-  - `dist/assets/index-CQDsYsqi.js` (207.71 kB │ gzip: 59.02 kB)
-  - 1576 modules transformed with zero TypeScript errors.
+  - `dist/assets/index-ZT992Wjd.css` (2.61 kB │ gzip: 1.08 kB)
+  - `dist/assets/index-BobU5WpO.js` (222.36 kB │ gzip: 62.49 kB)
+  - 1578 modules transformed with zero TypeScript errors.
 
 ### 3.3. Nebius Live Provider Call Status
 - **Status:** **NOT RUN (Simulated in Automated Tests via Mock/Adapter)**
@@ -120,13 +120,13 @@ Every capability below is classified under one of four strict audit classificati
 To transition CodeSentinel into an enterprise-grade production platform, the engineering work is organized into **exactly ten distinct, logically sequenced phases**:
 
 ```
-[Phase 1: Sandboxing] ──> [Phase 2: Queue Decoupling] ──> [Phase 3: Auth & Identity] ──> [Phase 4: Nebius Live Handshake]
-                                                                                                  │
-                                                                                                  ▼
-[Phase 8: Backup/Restore] <── [Phase 7: Frontend Polish] <── [Phase 6: Observability] <── [Phase 5: Secrets & KMS]
-         │
-         ▼
-[Phase 9: Staging Rehearsal] ──> [Phase 10: Production Release]
+[Phase 1: Sandboxing] â”€â”€> [Phase 2: Queue Decoupling] â”€â”€> [Phase 3: Auth & Identity] â”€â”€> [Phase 4: Nebius Live Handshake]
+                                                                                                  â”‚
+                                                                                                  â–¼
+[Phase 8: Backup/Restore] <â”€â”€ [Phase 7: Frontend Polish] <â”€â”€ [Phase 6: Observability] <â”€â”€ [Phase 5: Secrets & KMS]
+         â”‚
+         â–¼
+[Phase 9: Staging Rehearsal] â”€â”€> [Phase 10: Production Release]
 ```
 
 ---
