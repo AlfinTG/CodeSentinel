@@ -96,6 +96,17 @@ def apply_default_test_runner_runtime(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def reset_circuit_breakers():
+    """Ensure circuit breakers start in a clean CLOSED state for every test."""
+    from app.services.analysis import nebius_circuit_breaker, nvidia_circuit_breaker
+    nebius_circuit_breaker.reset()
+    nvidia_circuit_breaker.reset()
+    yield
+    nebius_circuit_breaker.reset()
+    nvidia_circuit_breaker.reset()
+
+
+@pytest.fixture(autouse=True)
 def default_test_runner_runtime(monkeypatch):
     """Ensure baseline unit and integration tests run without an external Docker daemon.
     When Docker is unavailable on the host, default to 'subprocess' for general test fixtures,

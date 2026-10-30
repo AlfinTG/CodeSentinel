@@ -84,14 +84,31 @@ NEBIUS_CALL_DURATION_SECONDS = Histogram(
     registry=registry,
 )
 
+# --- NVIDIA NIM AI Analysis & Token Telemetry ---
+NVIDIA_TOKENS_TOTAL = Counter(
+    "codesentinel_nvidia_tokens_total",
+    "Total tokens consumed by NVIDIA NIM API model invocations",
+    ["model_id", "token_type"],
+    registry=registry,
+)
+
+NVIDIA_CALL_DURATION_SECONDS = Histogram(
+    "codesentinel_nvidia_call_duration_seconds",
+    "Duration of external calls to NVIDIA NIM in seconds",
+    ["model_id", "outcome"],
+    buckets=(0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 45.0, 60.0),
+    registry=registry,
+)
+
 CIRCUIT_BREAKER_STATE = Gauge(
     "codesentinel_circuit_breaker_state",
-    "Current state of the Nebius circuit breaker (0=CLOSED, 1=HALF_OPEN, 2=OPEN)",
+    "Current state of AI circuit breakers (0=CLOSED, 1=HALF_OPEN, 2=OPEN)",
     ["provider"],
     registry=registry,
 )
 # Initialize provider circuit breaker gauge to CLOSED (0)
 CIRCUIT_BREAKER_STATE.labels(provider="nebius").set(0)
+CIRCUIT_BREAKER_STATE.labels(provider="nvidia").set(0)
 
 
 # --- Helper Instrumentation Functions ---
@@ -131,6 +148,23 @@ def record_queue_job_event(job_type: str, status: str, duration_seconds: float |
                 job_type=job_type,
                 status=status,
             ).observe(duration_seconds)
+
+
+def record_nvidia_usage(
+    model_id: str,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    duration_seconds: float = 0.0,
+    outcome: str = "succeeded",
+) -> None:
+    """Record NVIDIA NIM API token usage and call latency."""
+    with contextlib.suppress(Exception):
+        if prompt_tokens > 0:
+            NVIDIA_TOKENS_TOTAL.labels(model_id=model_id, token_type="prompt").inc(prompt_tokens)
+        if completion_tokens > 0:
+            NVIDIA_TOKENS_TOTAL.labels(model_id=model_id, token_type="completion").inc(completion_tokens)
+        if duration_seconds > 0:
+            NVIDIA_CALL_DURATION_SECONDS.labels(model_id=model_id, outcome=outcome).observe(duration_seconds)
 
 
 def record_nebius_usage(
