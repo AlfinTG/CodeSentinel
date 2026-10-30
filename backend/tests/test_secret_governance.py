@@ -1,12 +1,14 @@
-"""Tests for Production Secret Governance and KMS Integration (Phase 5)."""
+"""Tests for Production Secret Governance, KMS Integration, and Startup Ordering (Phase 5)."""
 
+import contextlib
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from app.core.config import Settings
+from app.core.lifecycle import initialize_application, resolve_secrets_and_validate
 from app.core.secrets import (
     AwsSecretsManagerProvider,
     CompositeSecretProvider,
@@ -22,6 +24,8 @@ from app.core.secrets import (
     sanitize_database_url,
     validate_secret_rotation,
 )
+from app.db.session import get_db, init_db
+from app.main import app, lifespan
 
 
 class TestSecretStringAndMasking:
@@ -202,7 +206,11 @@ class TestSecretProviders:
         assert composite.get_secret("KEY_3") is None
 
     def test_get_secret_provider_factory(self):
+        # Supported providers
         assert isinstance(get_secret_provider("env"), EnvSecretProvider)
+        assert isinstance(get_secret_provider(None), EnvSecretProvider)
+        assert isinstance(get_secret_provider(""), EnvSecretProvider)
+        assert isinstance(get_secret_provider("   "), EnvSecretProvider)
         assert isinstance(
             get_secret_provider("memory", secrets={"K": "V"}), InMemorySecretProvider
         )
@@ -218,6 +226,10 @@ class TestSecretProviders:
             get_secret_provider("gcp", project_id="proj-id"),
             GcpSecretManagerProvider,
         )
+
+        # Unknown provider fails closed
+        with pytest.raises(ValueError, match="Unsupported or unknown secret provider"):
+            get_secret_provider("azure_key_vault", token="sensitive_token_should_not_leak")
 
 
 class TestSecretResolutionAndSettingsIntegration:
@@ -259,6 +271,41 @@ class TestSecretResolutionAndSettingsIntegration:
 
 
 class TestProductionSecurityValidation:
+    def test_production_rejects_insecure_cookie(self):
+        with pytest.raises(
+            ValueError, match="COOKIE_SECURE must be True in production"
+        ):
+            Settings(
+                CODESENTINEL_ENV="production",
+                RUNNER_CONTAINER_RUNTIME="docker",
+                RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=False,
+            )
+
+    def test_production_rejects_development_database_url(self):
+        with pytest.raises(
+            ValueError, match="DATABASE_URL retains default development credentials"
+        ):
+            Settings(
+                CODESENTINEL_ENV="production",
+                RUNNER_CONTAINER_RUNTIME="docker",
+                RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                DATABASE_URL="postgresql+psycopg://codesentinel:codesentinel_password@localhost:5432/codesentinel_dev",
+            )
+
+    def test_production_rejects_sqlite_database_url(self):
+        with pytest.raises(
+            ValueError, match="DATABASE_URL retains default development credentials"
+        ):
+            Settings(
+                CODESENTINEL_ENV="production",
+                RUNNER_CONTAINER_RUNTIME="docker",
+                RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                DATABASE_URL="sqlite:///./codesentinel_prod.db",
+            )
+
     def test_production_rejects_default_session_secret(self):
         with pytest.raises(
             ValueError, match="SESSION_SECRET_KEY must not use default development value"
@@ -267,8 +314,10 @@ class TestProductionSecurityValidation:
                 CODESENTINEL_ENV="production",
                 RUNNER_CONTAINER_RUNTIME="docker",
                 RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                DATABASE_URL="postgresql+psycopg://prod:strong_pass@db.prod:5432/prod_db",
                 SESSION_SECRET_KEY="development-secret-key-replace-in-production-32-chars-min",
-                GITHUB_WEBHOOK_SECRET="valid-webhook-secret-production-random",
+                GITHUB_WEBHOOK_SECRET="valid-webhook-secret-production-random-min-32-chars",
             )
 
     def test_production_rejects_short_session_secret(self):
@@ -279,8 +328,24 @@ class TestProductionSecurityValidation:
                 CODESENTINEL_ENV="production",
                 RUNNER_CONTAINER_RUNTIME="docker",
                 RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                DATABASE_URL="postgresql+psycopg://prod:strong_pass@db.prod:5432/prod_db",
                 SESSION_SECRET_KEY="too-short-secret",
-                GITHUB_WEBHOOK_SECRET="valid-webhook-secret-production-random",
+                GITHUB_WEBHOOK_SECRET="valid-webhook-secret-production-random-min-32-chars",
+            )
+
+    def test_production_rejects_empty_session_secret(self):
+        with pytest.raises(
+            ValueError, match="SESSION_SECRET_KEY must not be empty"
+        ):
+            Settings(
+                CODESENTINEL_ENV="production",
+                RUNNER_CONTAINER_RUNTIME="docker",
+                RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                DATABASE_URL="postgresql+psycopg://prod:strong_pass@db.prod:5432/prod_db",
+                SESSION_SECRET_KEY="   ",
+                GITHUB_WEBHOOK_SECRET="valid-webhook-secret-production-random-min-32-chars",
             )
 
     def test_production_rejects_default_webhook_secret(self):
@@ -291,8 +356,64 @@ class TestProductionSecurityValidation:
                 CODESENTINEL_ENV="production",
                 RUNNER_CONTAINER_RUNTIME="docker",
                 RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                DATABASE_URL="postgresql+psycopg://prod:strong_pass@db.prod:5432/prod_db",
                 SESSION_SECRET_KEY="valid-secure-session-key-32-chars-long!",
                 GITHUB_WEBHOOK_SECRET="development-webhook-secret",
+            )
+
+    def test_production_rejects_short_webhook_secret(self):
+        with pytest.raises(
+            ValueError, match="GITHUB_WEBHOOK_SECRET must be at least 32 characters"
+        ):
+            Settings(
+                CODESENTINEL_ENV="production",
+                RUNNER_CONTAINER_RUNTIME="docker",
+                RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                DATABASE_URL="postgresql+psycopg://prod:strong_pass@db.prod:5432/prod_db",
+                SESSION_SECRET_KEY="valid-secure-session-key-32-chars-long!",
+                GITHUB_WEBHOOK_SECRET="short-webhook-secret",
+            )
+
+    def test_production_rejects_empty_webhook_secret(self):
+        with pytest.raises(
+            ValueError, match="GITHUB_WEBHOOK_SECRET must not be empty"
+        ):
+            Settings(
+                CODESENTINEL_ENV="production",
+                RUNNER_CONTAINER_RUNTIME="docker",
+                RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                DATABASE_URL="postgresql+psycopg://prod:strong_pass@db.prod:5432/prod_db",
+                SESSION_SECRET_KEY="valid-secure-session-key-32-chars-long!",
+                GITHUB_WEBHOOK_SECRET="   ",
+            )
+
+    def test_production_rejects_missing_vault_addr(self):
+        with pytest.raises(
+            ValueError, match="VAULT_ADDR must be configured when SECRET_PROVIDER is 'vault'"
+        ):
+            Settings(
+                CODESENTINEL_ENV="production",
+                RUNNER_CONTAINER_RUNTIME="docker",
+                RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                SECRET_PROVIDER="vault",
+                VAULT_ADDR="",
+            )
+
+    def test_production_rejects_missing_aws_secret_id(self):
+        with pytest.raises(
+            ValueError, match="SECRET_MANAGER_SECRET_ID must be configured"
+        ):
+            Settings(
+                CODESENTINEL_ENV="production",
+                RUNNER_CONTAINER_RUNTIME="docker",
+                RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+                COOKIE_SECURE=True,
+                SECRET_PROVIDER="aws_secrets_manager",
+                SECRET_MANAGER_SECRET_ID="",
             )
 
     def test_production_valid_configuration_passes(self):
@@ -300,11 +421,26 @@ class TestProductionSecurityValidation:
             CODESENTINEL_ENV="production",
             RUNNER_CONTAINER_RUNTIME="docker",
             RUNNER_WORKSPACE_ROOT="/var/lib/codesentinel/workspaces",
+            COOKIE_SECURE=True,
+            DATABASE_URL="postgresql+psycopg://prod:strong_pass@db.prod:5432/prod_db",
             SESSION_SECRET_KEY="a" * 32,
-            GITHUB_WEBHOOK_SECRET="random-strong-webhook-secret-value",
+            GITHUB_WEBHOOK_SECRET="b" * 32,
         )
         assert prod_settings.CODESENTINEL_ENV == "production"
         assert prod_settings.SESSION_SECRET_KEY == "a" * 32
+        assert prod_settings.GITHUB_WEBHOOK_SECRET == "b" * 32
+
+    def test_development_mode_permits_defaults(self):
+        dev_settings = Settings(
+            CODESENTINEL_ENV="development",
+            RUNNER_CONTAINER_RUNTIME="subprocess",
+            RUNNER_WORKSPACE_ROOT="",
+            COOKIE_SECURE=False,
+            DATABASE_URL="postgresql+psycopg://codesentinel:codesentinel_password@localhost:5432/codesentinel_dev",
+            SESSION_SECRET_KEY="development-secret-key-replace-in-production-32-chars-min",
+            GITHUB_WEBHOOK_SECRET="development-webhook-secret",
+        )
+        assert dev_settings.CODESENTINEL_ENV == "development"
 
 
 class TestSecretRotationValidation:
@@ -343,3 +479,212 @@ class TestSecretRotationValidation:
         assert valid
         assert reason is None
 
+
+@pytest.fixture
+def isolate_database_state():
+    """Guarantee restoration of global engine and SessionLocal binding after test execution."""
+    import app.db.session as session_module
+
+    original_engine = session_module.engine
+    try:
+        yield
+    finally:
+        current_engine = session_module.engine
+        if current_engine is not None and current_engine is not original_engine:
+            with contextlib.suppress(Exception):
+                current_engine.dispose()
+        session_module.engine = original_engine
+        session_module.SessionLocal.configure(bind=original_engine)
+
+
+class TestStartupLifecycleAndOrdering:
+    def test_startup_with_environment_provider(self):
+        settings_obj = Settings(
+            CODESENTINEL_ENV="development",
+            SECRET_PROVIDER="env",
+        )
+        initialized = initialize_application(settings_obj=settings_obj)
+        assert initialized.CODESENTINEL_ENV == "development"
+
+    def test_startup_with_mocked_kms_provider(self, isolate_database_state):
+        provider = InMemorySecretProvider({
+            "DATABASE_URL": "postgresql+psycopg://resolved_user:strong_password@prod.db:5432/resolved_db",
+            "SESSION_SECRET_KEY": "resolved-kms-session-key-32-characters-min",
+            "GITHUB_WEBHOOK_SECRET": "resolved-kms-webhook-key-32-characters-min",
+        })
+
+        prod_settings = Settings(
+            CODESENTINEL_ENV="production",
+            RUNNER_CONTAINER_RUNTIME="docker",
+            RUNNER_WORKSPACE_ROOT="/var/lib/workspaces",
+            COOKIE_SECURE=True,
+            SECRET_PROVIDER="memory",
+        )
+
+        initialized = initialize_application(settings_obj=prod_settings, provider=provider)
+        assert (
+            initialized.SESSION_SECRET_KEY
+            == "resolved-kms-session-key-32-characters-min"
+        )
+        assert (
+            initialized.GITHUB_WEBHOOK_SECRET
+            == "resolved-kms-webhook-key-32-characters-min"
+        )
+        assert (
+            initialized.DATABASE_URL
+            == "postgresql+psycopg://resolved_user:strong_password@prod.db:5432/resolved_db"
+        )
+
+    def test_startup_cloud_provider_failure_fails_closed(self):
+        mock_provider = MagicMock()
+        mock_provider.get_secret.side_effect = RuntimeError("KMS network connection timeout")
+
+        prod_settings = Settings(
+            CODESENTINEL_ENV="production",
+            RUNNER_CONTAINER_RUNTIME="docker",
+            RUNNER_WORKSPACE_ROOT="/var/lib/workspaces",
+            COOKIE_SECURE=True,
+            SECRET_PROVIDER="memory",
+        )
+
+        with pytest.raises(RuntimeError, match="KMS network connection timeout"):
+            initialize_application(settings_obj=prod_settings, provider=mock_provider)
+
+    def test_startup_unknown_provider_fails_closed(self):
+        prod_settings = Settings(
+            CODESENTINEL_ENV="development",
+        )
+        # Manually assign unsupported provider
+        prod_settings.SECRET_PROVIDER = "unsupported_cloud_kms"  # type: ignore[assignment]
+
+        with pytest.raises(ValueError, match="Unsupported or unknown secret provider"):
+            initialize_application(settings_obj=prod_settings)
+
+    def test_database_engine_reconfiguration(self, isolate_database_state):
+        # Initial call with in-memory sqlite
+        init_db("sqlite:///:memory:")
+        session_gen = get_db()
+        db_session = next(session_gen)
+        try:
+            assert db_session.bind is not None
+            assert "sqlite" in str(db_session.bind.url)
+        finally:
+            with contextlib.suppress(StopIteration):
+                next(session_gen)
+
+    @pytest.mark.asyncio
+    async def test_api_lifespan_initialization(self):
+        # Verify that entering the FastAPI lifespan invokes initialize_application
+        with patch("app.main.initialize_application") as mock_init:
+            async with lifespan(app):
+                pass
+            mock_init.assert_called_once()
+
+    def test_worker_main_initialization(self):
+        with patch("app.core.lifecycle.initialize_application") as mock_init, \
+             patch("argparse.ArgumentParser.parse_args") as mock_args, \
+             patch("app.worker.main.Worker") as mock_worker_cls:
+            mock_args.return_value = MagicMock(worker_id="worker-test", poll_interval=1.0)
+            mock_worker = MagicMock()
+            mock_worker_cls.return_value = mock_worker
+
+            from app.worker.main import main
+            main()
+
+            mock_init.assert_called_once()
+            mock_worker_cls.assert_called_once_with(
+                worker_id="worker-test",
+                poll_interval=1.0,
+            )
+            mock_worker.run.assert_called_once()
+
+
+class TestAlembicMigrationSecretResolution:
+    def test_migration_resolves_kms_database_url(self):
+        provider = InMemorySecretProvider({
+            "DATABASE_URL": "postgresql+psycopg://migrator:strong_pass@prod.db:5432/codesentinel_prod",
+            "SESSION_SECRET_KEY": "a" * 32,
+            "GITHUB_WEBHOOK_SECRET": "b" * 32,
+        })
+        prod_settings = Settings(
+            CODESENTINEL_ENV="production",
+            RUNNER_CONTAINER_RUNTIME="docker",
+            RUNNER_WORKSPACE_ROOT="/var/lib/workspaces",
+            COOKIE_SECURE=True,
+            SECRET_PROVIDER="memory",
+        )
+
+        resolved_settings = resolve_secrets_and_validate(
+            settings_obj=prod_settings,
+            provider=provider,
+        )
+        assert (
+            resolved_settings.DATABASE_URL
+            == "postgresql+psycopg://migrator:strong_pass@prod.db:5432/codesentinel_prod"
+        )
+
+    def test_migration_fails_closed_on_provider_error(self):
+        mock_provider = MagicMock()
+        mock_provider.get_secret.side_effect = RuntimeError("AWS Secrets Manager unreachable")
+        prod_settings = Settings(
+            CODESENTINEL_ENV="production",
+            RUNNER_CONTAINER_RUNTIME="docker",
+            RUNNER_WORKSPACE_ROOT="/var/lib/workspaces",
+            COOKIE_SECURE=True,
+            SECRET_PROVIDER="memory",
+        )
+
+        with pytest.raises(RuntimeError, match="AWS Secrets Manager unreachable"):
+            resolve_secrets_and_validate(settings_obj=prod_settings, provider=mock_provider)
+
+    def test_migration_fails_closed_on_insecure_production_url(self):
+        provider = InMemorySecretProvider({
+            "DATABASE_URL": "postgresql+psycopg://codesentinel:codesentinel_password@localhost:5432/codesentinel_dev",
+            "SESSION_SECRET_KEY": "a" * 32,
+            "GITHUB_WEBHOOK_SECRET": "b" * 32,
+        })
+        prod_settings = Settings(
+            CODESENTINEL_ENV="production",
+            RUNNER_CONTAINER_RUNTIME="docker",
+            RUNNER_WORKSPACE_ROOT="/var/lib/workspaces",
+            COOKIE_SECURE=True,
+            SECRET_PROVIDER="memory",
+        )
+
+        with pytest.raises(
+            ValueError, match="DATABASE_URL retains default development credentials"
+        ):
+            resolve_secrets_and_validate(settings_obj=prod_settings, provider=provider)
+
+    def test_alembic_env_online_migration_wiring(self):
+        import importlib.util
+        from pathlib import Path
+
+        import alembic.context as alembic_context
+
+        env_path = Path(__file__).resolve().parent.parent / "alembic" / "env.py"
+        spec = importlib.util.spec_from_file_location("alembic_env_test_module", env_path)
+        assert spec is not None and spec.loader is not None
+
+        mock_config = MagicMock()
+        mock_config.config_file_name = None
+        mock_config.config_ini_section = "alembic"
+        mock_config.get_section.return_value = {}
+
+        mock_engine = MagicMock()
+        mock_conn = MagicMock()
+        mock_engine.connect.return_value.__enter__.return_value = mock_conn
+
+        with patch.object(alembic_context, "config", mock_config, create=True), \
+             patch("sqlalchemy.engine_from_config", return_value=mock_engine) as mock_engine_from_config, \
+             patch("app.core.lifecycle.resolve_secrets_and_validate") as mock_resolve, \
+             patch.object(alembic_context, "is_offline_mode", return_value=False, create=True), \
+             patch.object(alembic_context, "configure", create=True), \
+             patch.object(alembic_context, "begin_transaction", create=True), \
+             patch.object(alembic_context, "run_migrations", create=True):
+
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+
+            mock_resolve.assert_called()
+            mock_engine_from_config.assert_called()

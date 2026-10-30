@@ -1,6 +1,8 @@
 """FastAPI application entrypoint for CodeSentinel."""
 
 import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,11 +10,21 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
+from app.core.lifecycle import initialize_application
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """FastAPI lifespan context manager ensuring secrets and DB are initialized on startup."""
+    initialize_application()
+    yield
+
 
 app = FastAPI(
     title="CodeSentinel API",
     description="Evidence-led regression diagnosis & repair verification",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS Middleware

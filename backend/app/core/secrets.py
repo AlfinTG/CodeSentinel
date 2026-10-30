@@ -1,8 +1,14 @@
-"""Production Secret Governance and KMS Integration for CodeSentinel.
+"""Production Secret Governance and Secret Manager Integration for CodeSentinel.
 
-Provides dynamic, zero-disk secret resolution from cloud Key Management Services
+Provides dynamic, zero-disk secret resolution from cloud Secret Management Services
 (AWS Secrets Manager, GCP Secret Manager, HashiCorp Vault, or in-memory injection),
-safe credential masking, and automated secret rotation validation.
+safe credential masking, and candidate secret rotation validation.
+
+Note on Key Management Services (KMS):
+Secret payloads stored in AWS Secrets Manager or GCP Secret Manager may be encrypted
+at rest by cloud infrastructure using Cloud KMS keys. CodeSentinel resolves credentials
+via Secret Manager APIs and does not perform application-level KMS envelope operations
+(e.g., direct kms:Decrypt API calls).
 """
 
 from __future__ import annotations
@@ -304,9 +310,24 @@ class CompositeSecretProvider(SecretProvider):
         return merged
 
 
-def get_secret_provider(provider_type: str, **kwargs: Any) -> SecretProvider:
-    """Factory creating secret provider from configuration."""
-    provider_clean = (provider_type or "env").lower().strip()
+def get_secret_provider(provider_type: str | None = None, **kwargs: Any) -> SecretProvider:
+    """Factory creating secret provider from configuration.
+
+    Supported providers:
+      - 'env': Environment variables (default)
+      - 'memory' / 'inmemory': In-memory provider for testing
+      - 'vault': HashiCorp Vault KV v2 engine
+      - 'aws' / 'aws_secrets_manager': AWS Secrets Manager
+      - 'gcp' / 'gcp_secret_manager': GCP Secret Manager
+
+    Raises:
+      ValueError: If provider_type is unrecognized or misspelled.
+    """
+    if provider_type is None:
+        return EnvSecretProvider()
+    provider_clean = provider_type.strip().lower()
+    if not provider_clean or provider_clean == "env":
+        return EnvSecretProvider()
     if provider_clean in ("memory", "inmemory"):
         return InMemorySecretProvider(kwargs.get("secrets"))
     if provider_clean == "vault":
@@ -329,7 +350,10 @@ def get_secret_provider(provider_type: str, **kwargs: Any) -> SecretProvider:
             version=kwargs.get("version", "latest"),
             gcp_client=kwargs.get("gcp_client"),
         )
-    return EnvSecretProvider()
+    raise ValueError(
+        f"Unsupported or unknown secret provider: {provider_clean!r}. "
+        "Supported providers are: 'env', 'memory', 'vault', 'aws_secrets_manager', 'gcp_secret_manager'."
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -372,7 +396,11 @@ def resolve_and_inject_secrets(
             setattr(settings_obj, key, val)
             resolved[key] = "***RESOLVED_FROM_KMS***"
 
-    logger.info("Secret governance: dynamically resolved %d managed secrets from %s", len(resolved), type(effective_provider).__name__)
+    logger.info(
+        "Secret governance: dynamically resolved %d managed secrets from %s",
+        len(resolved),
+        type(effective_provider).__name__,
+    )
     return resolved
 
 
