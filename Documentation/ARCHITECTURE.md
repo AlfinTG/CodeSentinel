@@ -4,7 +4,7 @@
 Trace source revision to test facts and diagnosis; durable/idempotent event processing; clear trust boundaries; isolated repository execution; understandable failure states.
 
 ## Reference flow
-Browser → React/TypeScript → FastAPI → PostgreSQL. GitHub App sends webhook to FastAPI. API verifies raw-body signature and installation/repository, then transactionally persists delivery/run/outbox and acknowledges quickly. Redis/RQ transports work to a separate trusted worker/supervisor. Supervisor creates an ephemeral restricted job container for the pinned revision and approved checks. Bounded results are normalized/redacted and persisted. A server-side adapter calls Nebius Token Factory; validator checks model schema/evidence IDs. UI renders test outcome separately from analysis state.
+Browser → React/TypeScript → FastAPI → PostgreSQL. GitHub App sends webhook to FastAPI. API verifies raw-body signature and installation/repository, then transactionally persists delivery/run/outbox and acknowledges quickly. Redis/RQ transports work to a separate trusted worker/supervisor. Supervisor creates an ephemeral restricted job container for the pinned revision and approved checks. Bounded results are normalized/redacted and persisted. A server-side adapter calls the configured AI provider (Nebius Token Factory as reference provider, or NVIDIA NIM as alternative); validator checks model schema/evidence IDs. UI renders test outcome separately from analysis state.
 
 ## Components
 - Frontend: presentation and explicit user actions; no provider credentials.
@@ -14,7 +14,7 @@ Browser → React/TypeScript → FastAPI → PostgreSQL. GitHub App sends webhoo
 - Trusted supervisor: fetches authorized source and creates/destroys execution containers; privileged infrastructure requiring a narrow interface.
 - Untrusted job: non-root, resource/time/output bounded, minimal workspace, no secrets/socket/host mounts; network disabled by default.
 - Evidence normalizer: size caps, redaction, truncation markers, factual test result normalization.
-- Model adapter/validator: server-side provider call, timeouts, bounded retries, strict structured output and evidence-reference checks.
+- Model adapter/validator: server-side provider call (Nebius Token Factory or NVIDIA NIM), timeouts, bounded retries, strict structured output and evidence-reference checks.
 - PostgreSQL is source of truth; Redis/RQ is transport, not the only record of work.
 
 ## State model
