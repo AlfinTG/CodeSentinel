@@ -144,14 +144,14 @@ def test_circuit_breaker_trips_to_open_at_threshold():
 
 def test_circuit_breaker_transitions_to_half_open_after_timeout():
     """Circuit transitions from OPEN to HALF_OPEN after recovery timeout."""
-    cb = CircuitBreaker(failure_threshold=2, recovery_timeout_seconds=0.05)
+    cb = CircuitBreaker(failure_threshold=2, recovery_timeout_seconds=0.2)
 
     cb.record_failure()
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
     assert cb.can_execute() is False
 
-    time.sleep(0.06)
+    time.sleep(0.25)
 
     assert cb.can_execute() is True
     assert cb.state == CircuitState.HALF_OPEN
@@ -159,11 +159,11 @@ def test_circuit_breaker_transitions_to_half_open_after_timeout():
 
 def test_circuit_breaker_half_open_single_probe_concurrency():
     """In HALF_OPEN state, only ONE recovery probe is allowed in flight at a time."""
-    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.03)
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.2)
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
 
-    time.sleep(0.06)
+    time.sleep(0.25)
     assert cb.state == CircuitState.HALF_OPEN
     assert cb.probe_in_flight is False
 
@@ -201,11 +201,11 @@ def test_circuit_breaker_half_open_single_probe_concurrency():
 
 def test_circuit_breaker_half_open_failure_retrips_to_open():
     """A failed probe in HALF_OPEN immediately re-trips back to OPEN and clears probe slot."""
-    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.03)
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.2)
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
 
-    time.sleep(0.06)
+    time.sleep(0.25)
     assert cb.can_execute() is True
     assert cb.probe_in_flight is True
 
@@ -218,11 +218,11 @@ def test_circuit_breaker_half_open_failure_retrips_to_open():
 
 def test_circuit_breaker_release_probe_unblocks_subsequent_probe():
     """release_probe() clears the probe slot without altering failure counts or state."""
-    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.03)
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.2)
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
 
-    time.sleep(0.06)
+    time.sleep(0.25)
     assert cb.can_execute() is True
     assert cb.probe_in_flight is True
     assert cb.can_execute() is False  # 2nd caller blocked
@@ -546,7 +546,7 @@ def test_run_analysis_half_open_concurrent_probe_rejection(
     evidence_id = str(evidence[0].id)
 
     analysis_svc.nebius_circuit_breaker.failure_threshold = 1
-    analysis_svc.nebius_circuit_breaker.recovery_timeout_seconds = 0.05
+    analysis_svc.nebius_circuit_breaker.recovery_timeout_seconds = 0.4
 
     # 1. Trip circuit breaker with 1 failure
     an1 = Analysis(
@@ -565,7 +565,7 @@ def test_run_analysis_half_open_concurrent_probe_rejection(
     assert analysis_svc.nebius_circuit_breaker.state == CircuitState.OPEN
 
     # 2. Wait for recovery timeout
-    time.sleep(0.06)
+    time.sleep(0.5)
 
     # 3. Create two pending analyses
     an2 = Analysis(
@@ -648,11 +648,11 @@ def test_run_analysis_exception_releases_probe_reservation(
     run, evidence = run_with_evidence
 
     analysis_svc.nebius_circuit_breaker.failure_threshold = 1
-    analysis_svc.nebius_circuit_breaker.recovery_timeout_seconds = 0.05
+    analysis_svc.nebius_circuit_breaker.recovery_timeout_seconds = 0.2
     analysis_svc.nebius_circuit_breaker.record_failure()
     assert analysis_svc.nebius_circuit_breaker.state == CircuitState.OPEN
 
-    time.sleep(0.06)
+    time.sleep(0.25)
 
     an = Analysis(
         run_id=run.id,

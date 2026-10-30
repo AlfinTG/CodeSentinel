@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "backend/.env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -61,6 +61,19 @@ class Settings(BaseSettings):
     GITHUB_APP_CLIENT_SECRET: str = ""
     GITHUB_WEBHOOK_SECRET: str = "development-webhook-secret"
     GITHUB_APP_PRIVATE_KEY_PATH: str = ""
+
+    # AI Provider Selection
+    # Supported: "nvidia" (NVIDIA NIM API), "nebius" (Nebius Token Factory)
+    AI_PROVIDER: str = "nvidia"
+
+    # NVIDIA NIM API (https://integrate.api.nvidia.com)
+    NVIDIA_BASE_URL: str = "https://integrate.api.nvidia.com/v1"
+    NVIDIA_API_KEY: str = ""
+    NVIDIA_MODEL_ID: str = "nvidia/nemotron-3.5-lightning-30b-a3b"
+    NVIDIA_TIMEOUT_SECONDS: int = 60
+    NVIDIA_MAX_RETRIES: int = 2
+    NVIDIA_CIRCUIT_BREAKER_FAILURE_THRESHOLD: int = Field(default=3, ge=1, le=50)
+    NVIDIA_CIRCUIT_BREAKER_RECOVERY_SECONDS: int = Field(default=30, ge=1, le=3600)
 
     # Nebius Token Factory & NVIDIA Open Model
     NEBIUS_TOKEN_FACTORY_BASE_URL: str = "https://api.tokenfactory.nebius.com/v1"
@@ -227,6 +240,19 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def effective_ai_provider(self) -> str:
+        prov = self.AI_PROVIDER.strip().lower() if self.AI_PROVIDER else ""
+        if prov in ("nvidia", "nvidia_nim"):
+            return "nvidia"
+        if prov in ("nebius", "nebius_token_factory"):
+            return "nebius_token_factory"
+        if self.NVIDIA_API_KEY and not self.NEBIUS_TOKEN_FACTORY_API_KEY:
+            return "nvidia"
+        if self.NEBIUS_TOKEN_FACTORY_API_KEY and not self.NVIDIA_API_KEY:
+            return "nebius_token_factory"
+        return "nebius_token_factory"
 
 
 settings = Settings()

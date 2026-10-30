@@ -29,7 +29,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.telemetry import record_nebius_usage
+from app.core.telemetry import record_nebius_usage, record_nvidia_usage
 from app.models.analysis import Analysis
 from app.models.evidence import EvidenceItem
 from app.models.run import AnalysisOutcome, Run
@@ -42,6 +42,12 @@ nebius_circuit_breaker = CircuitBreaker(
     failure_threshold=settings.NEBIUS_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
     recovery_timeout_seconds=settings.NEBIUS_CIRCUIT_BREAKER_RECOVERY_SECONDS,
     name="nebius_token_factory",
+)
+
+nvidia_circuit_breaker = CircuitBreaker(
+    failure_threshold=settings.NVIDIA_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    recovery_timeout_seconds=settings.NVIDIA_CIRCUIT_BREAKER_RECOVERY_SECONDS,
+    name="nvidia_nim",
 )
 
 
@@ -74,6 +80,9 @@ class NebiusCallResult(tuple):
     ):
         self.error_code = error_code
         self.is_transient = is_transient
+
+
+AICallResult = NebiusCallResult
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -136,6 +145,7 @@ def run_analysis(run: Run, analysis: Analysis, db: Session) -> None:
         _do_analysis(run, analysis, db)
     except Exception as exc:  # noqa: BLE001
         nebius_circuit_breaker.release_probe()
+        nvidia_circuit_breaker.release_probe()
         logger.exception("Unexpected error in run_analysis for run=%s", run.id)
         _mark_failed(analysis, db, safe_error_code="internal_error", exc=exc)
 
@@ -172,14 +182,43 @@ def _do_analysis(run: Run, analysis: Analysis, db: Session) -> None:
     run.analysis_outcome = AnalysisOutcome.RUNNING.value
     db.commit()
 
-    # 5. Check circuit breaker before contacting model provider
-    if not nebius_circuit_breaker.can_execute():
+    # 5. Determine active AI provider and circuit breaker
+    target_provider = getattr(analysis, "provider", None)
+    if not target_provider or target_provider == "pending":
+        if settings.AI_PROVIDER:
+            target_provider = settings.effective_ai_provider
+        elif analysis.model_id and "nemotron-70b" in analysis.model_id:
+            target_provider = "nebius_token_factory"
+        elif analysis.model_id and "nemotron-3" in analysis.model_id:
+            target_provider = "nvidia"
+        else:
+            target_provider = settings.effective_ai_provider
+
+    if target_provider in ("nvidia", "nvidia_nim"):
+        effective_provider = "nvidia"
+        active_circuit_breaker = nvidia_circuit_breaker
+        active_model_id = analysis.model_id or settings.NVIDIA_MODEL_ID
+        call_fn = _call_nvidia
+        record_usage_fn = record_nvidia_usage
+    else:
+        effective_provider = "nebius_token_factory"
+        active_circuit_breaker = nebius_circuit_breaker
+        active_model_id = analysis.model_id or settings.NEBIUS_MODEL_ID
+        call_fn = _call_nebius
+        record_usage_fn = record_nebius_usage
+
+    analysis.provider = effective_provider
+    analysis.model_id = active_model_id
+
+    # Check circuit breaker before contacting model provider
+    if not active_circuit_breaker.can_execute():
         logger.warning(
-            "Nebius circuit breaker is OPEN or probe in-flight for run=%s — fast-failing analysis without calling provider",
+            "%s circuit breaker is OPEN or probe in-flight for run=%s — fast-failing analysis without calling provider",
+            effective_provider,
             run.id,
         )
-        record_nebius_usage(
-            model_id=analysis.model_id or settings.NEBIUS_MODEL_ID,
+        record_usage_fn(
+            model_id=analysis.model_id,
             duration_seconds=0.0,
             outcome="circuit_breaker_open",
         )
@@ -188,7 +227,7 @@ def _do_analysis(run: Run, analysis: Analysis, db: Session) -> None:
 
     # Call the model
     try:
-        call_result = _call_nebius(user_prompt)
+        call_result = call_fn(user_prompt)
         raw_response = call_result[0]
         latency_ms = call_result[1]
         token_counts = call_result[2]
@@ -204,34 +243,34 @@ def _do_analysis(run: Run, analysis: Analysis, db: Session) -> None:
         analysis.output_tokens = token_counts.get("completion_tokens")
 
         if raw_response is None:
-            record_nebius_usage(
-                model_id=analysis.model_id or settings.NEBIUS_MODEL_ID,
+            record_usage_fn(
+                model_id=analysis.model_id,
                 duration_seconds=latency_ms / 1000.0,
                 outcome=f"failed_{error_code}",
             )
             if is_transient:
-                nebius_circuit_breaker.record_failure()
+                active_circuit_breaker.record_failure()
             else:
                 # Permanent failure (e.g. 401 auth or 400 invalid request)
                 # Release probe slot without incrementing transient failure count
-                nebius_circuit_breaker.release_probe()
+                active_circuit_breaker.release_probe()
             _mark_failed(analysis, db, safe_error_code=error_code)
             return
 
         prompt_tok = token_counts.get("prompt_tokens", 0) if isinstance(token_counts, dict) else 0
         comp_tok = token_counts.get("completion_tokens", 0) if isinstance(token_counts, dict) else 0
-        record_nebius_usage(
-            model_id=analysis.model_id or settings.NEBIUS_MODEL_ID,
+        record_usage_fn(
+            model_id=analysis.model_id,
             prompt_tokens=prompt_tok,
             completion_tokens=comp_tok,
             duration_seconds=latency_ms / 1000.0,
             outcome="succeeded",
         )
-        nebius_circuit_breaker.record_success()
+        active_circuit_breaker.record_success()
 
     except Exception:
         # In case of any unexpected exception during call or processing, release probe
-        nebius_circuit_breaker.release_probe()
+        active_circuit_breaker.release_probe()
         raise
 
     # 6. Parse and validate the structured schema
@@ -313,6 +352,205 @@ def _compute_backoff_delay(attempt: int, resp: httpx.Response | None = None) -> 
     base_delay = min(0.5 * (2 ** attempt), 4.0)
     jitter = random.uniform(0.05, 0.25)
     return min(base_delay + jitter, 5.0)
+
+
+def _call_nvidia(
+    user_prompt: str,
+) -> NebiusCallResult:
+    """Call the NVIDIA NIM OpenAI-compatible endpoint.
+
+    Returns NebiusCallResult (unpacks as (parsed_json_or_None, latency_ms, token_counts)).
+    Never raises — all network/parse/HTTP errors are caught and classified safely.
+    Permanent 4xx errors are not retried. Transient 429/5xx/network errors are retried
+    with bounded backoff and jitter.
+    """
+    if not settings.NVIDIA_API_KEY:
+        logger.warning("NVIDIA_API_KEY not set — skipping live call")
+        return NebiusCallResult(None, 0, {}, error_code="provider_unavailable", is_transient=False)
+
+    url = f"{settings.NVIDIA_BASE_URL}/chat/completions"
+    payload = {
+        "model": settings.NVIDIA_MODEL_ID,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 4096,
+        "response_format": {"type": "json_object"},
+    }
+
+    last_exc: Exception | None = None
+    last_status: int | None = None
+    total_latency_ms = 0
+
+    for attempt in range(settings.NVIDIA_MAX_RETRIES + 1):
+        t0 = time.monotonic()
+        try:
+            with httpx.Client(timeout=settings.NVIDIA_TIMEOUT_SECONDS) as client:
+                resp = client.post(
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {settings.NVIDIA_API_KEY}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                )
+            call_latency = int((time.monotonic() - t0) * 1000)
+            total_latency_ms += call_latency
+
+            # Check for rate limiting (transient)
+            if resp.status_code == 429:
+                last_status = 429
+                last_exc = Exception("rate_limit_429")
+                logger.warning(
+                    "NVIDIA rate limit 429 on attempt %d of %d",
+                    attempt + 1,
+                    settings.NVIDIA_MAX_RETRIES + 1,
+                )
+                if attempt < settings.NVIDIA_MAX_RETRIES:
+                    delay = _compute_backoff_delay(attempt, resp)
+                    _backoff_sleep(delay)
+                    continue
+                break
+
+            # Check for server errors (transient)
+            if resp.status_code >= 500:
+                last_status = resp.status_code
+                last_exc = Exception(f"server_error_{resp.status_code}")
+                logger.warning(
+                    "NVIDIA server error %d on attempt %d of %d",
+                    resp.status_code,
+                    attempt + 1,
+                    settings.NVIDIA_MAX_RETRIES + 1,
+                )
+                if attempt < settings.NVIDIA_MAX_RETRIES:
+                    delay = _compute_backoff_delay(attempt, resp)
+                    _backoff_sleep(delay)
+                    continue
+                break
+
+            # Check for permanent client errors (4xx other than 429)
+            if 400 <= resp.status_code < 500:
+                last_status = resp.status_code
+                if resp.status_code in (401, 403):
+                    error_code = "provider_auth_error"
+                    logger.warning(
+                        "NVIDIA authentication failure (HTTP %d). Permanent error; not retrying.",
+                        resp.status_code,
+                    )
+                elif resp.status_code == 404:
+                    error_code = "provider_model_not_found"
+                    logger.warning(
+                        "NVIDIA model not found (HTTP 404). Permanent error; not retrying."
+                    )
+                else:
+                    error_code = "provider_invalid_request"
+                    logger.warning(
+                        "NVIDIA request error (HTTP %d). Permanent error; not retrying.",
+                        resp.status_code,
+                    )
+                return NebiusCallResult(
+                    None,
+                    total_latency_ms,
+                    {},
+                    error_code=error_code,
+                    is_transient=False,
+                )
+
+            resp.raise_for_status()
+
+            data = resp.json()
+            message = data["choices"][0]["message"]
+            content_str = message.get("content")
+            if not content_str:
+                logger.warning("NVIDIA model returned empty content (finish_reason=%s)", data["choices"][0].get("finish_reason"))
+                return NebiusCallResult(
+                    None,
+                    total_latency_ms,
+                    data.get("usage", {}),
+                    error_code="invalid_model_response",
+                    is_transient=False,
+                )
+            parsed = json.loads(content_str)
+            token_counts = data.get("usage", {})
+            return NebiusCallResult(parsed, call_latency, token_counts, error_code=None, is_transient=False)
+
+        except (httpx.TimeoutException, httpx.NetworkError) as exc:
+            call_latency = int((time.monotonic() - t0) * 1000)
+            total_latency_ms += call_latency
+            logger.warning(
+                "NVIDIA network error on attempt %d: %s",
+                attempt + 1,
+                type(exc).__name__,
+            )
+            last_exc = exc
+            if attempt < settings.NVIDIA_MAX_RETRIES:
+                delay = _compute_backoff_delay(attempt)
+                _backoff_sleep(delay)
+                continue
+
+        except httpx.HTTPStatusError as exc:
+            call_latency = int((time.monotonic() - t0) * 1000)
+            total_latency_ms += call_latency
+            status_code = exc.response.status_code if exc.response is not None else 0
+            logger.warning(
+                "NVIDIA HTTP status error on attempt %d: %d",
+                attempt + 1,
+                status_code,
+            )
+            last_status = status_code
+            last_exc = exc
+            if 400 <= status_code < 500 and status_code != 429:
+                err_code = "provider_auth_error" if status_code in (401, 403) else "provider_invalid_request"
+                return NebiusCallResult(
+                    None,
+                    total_latency_ms,
+                    {},
+                    error_code=err_code,
+                    is_transient=False,
+                )
+            if attempt < settings.NVIDIA_MAX_RETRIES:
+                delay = _compute_backoff_delay(attempt, exc.response)
+                _backoff_sleep(delay)
+                continue
+
+        except (json.JSONDecodeError, KeyError, IndexError) as exc:
+            call_latency = int((time.monotonic() - t0) * 1000)
+            total_latency_ms += call_latency
+            logger.warning("Failed to parse NVIDIA response: %s", type(exc).__name__)
+            return NebiusCallResult(
+                None,
+                total_latency_ms,
+                {},
+                error_code="invalid_model_response",
+                is_transient=False,
+            )
+
+        except Exception as exc:
+            call_latency = int((time.monotonic() - t0) * 1000)
+            total_latency_ms += call_latency
+            logger.exception("Unexpected error calling NVIDIA: %s", type(exc).__name__)
+            last_exc = exc
+            break
+
+    # If we exhausted retries without a valid response
+    if last_status == 429:
+        err_code = "provider_rate_limited"
+    elif last_status is not None and last_status >= 500:
+        err_code = "provider_unavailable"
+    elif isinstance(last_exc, httpx.TimeoutException):
+        err_code = "provider_timeout"
+    else:
+        err_code = "provider_unavailable"
+
+    return NebiusCallResult(
+        None,
+        total_latency_ms,
+        {},
+        error_code=err_code,
+        is_transient=True,
+    )
 
 
 def _call_nebius(
@@ -422,7 +660,17 @@ def _call_nebius(
             resp.raise_for_status()
 
             data = resp.json()
-            content_str = data["choices"][0]["message"]["content"]
+            message = data["choices"][0]["message"]
+            content_str = message.get("content")
+            if not content_str:
+                logger.warning("NVIDIA model returned empty content (finish_reason=%s)", data["choices"][0].get("finish_reason"))
+                return NebiusCallResult(
+                    None,
+                    total_latency_ms,
+                    data.get("usage", {}),
+                    error_code="invalid_model_response",
+                    is_transient=False,
+                )
             parsed = json.loads(content_str)
             token_counts = data.get("usage", {})
             return NebiusCallResult(parsed, call_latency, token_counts, error_code=None, is_transient=False)
