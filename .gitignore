@@ -82,3 +82,4 @@ redis-data/
 # Logs
 *.log
 logs/
+.neon
