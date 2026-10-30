@@ -56,28 +56,38 @@ CodeSentinel follows a decoupled client-server architecture with an asynchronous
 The following verification commands were executed directly against the local repository during this review:
 
 ### 3.1. Backend Test Suite
-- **Command:** `backend\.venv\Scripts\pytest.exe backend\tests -q`
-- **Observed Result:** **171 passed, 21 skipped, 1 warning in 47.93s** (Exit code: 0)
-- **Suite Breakdown:**
+- **Command:** `pytest backend/tests/ -v`
+- **Observed Result:** **241 passed, 21 skipped, 1 warning in 40.04s** (Exit code: 0)
+- **Suite Breakdown (262 total tests collected):**
+  - `test_container_isolation.py`: 38 passed, 7 skipped (Windows host / non-Linux cgroup v2 environment)
+  - `test_github_auth.py`: 16 passed (OAuth flow, CSRF, cookie security, token exchange)
+  - `test_nebius_live.py`: 1 skipped (requires live `NEBIUS_TOKEN_FACTORY_API_KEY`)
   - `test_phase0_baseline.py`: 5 passed (health probes, security headers, settings secret-safety)
   - `test_phase1_api_authorization.py`: 2 passed (cross-user isolation, authorization)
   - `test_phase1_migration.py`: 2 passed (all 10 entities registered, constraints verified)
   - `test_phase1_transitions.py`: 5 passed (legal, illegal, and aggregate lifecycle transitions)
+  - `test_phase2_audit_regressions.py`: 7 passed (audit logging, event tracking)
+  - `test_phase2_postgres_integration.py`: 13 skipped (requires live PostgreSQL server)
+  - `test_phase2_queue_and_worker.py`: 15 passed (in-memory & durable queue mechanics, worker retry)
   - `test_phase2_webhooks.py`: 5 passed (HMAC verification, idempotency, event filtering)
   - `test_phase3_runner_and_evidence.py`: 6 passed (redaction, bounding, binary allowlist, environment stripping, timeouts)
   - `test_phase4_analysis.py`: 21 passed (prompt bounding, schema validation, foreign evidence rejection, provider decoupling)
+  - `test_phase4_circuit_breaker.py`: 20 passed (circuit breaker state transitions, failure threshold, recovery half-open)
   - `test_phase5_api_extensions.py`: 7 passed (run cancellation, demo seeding, run-level evidence retrieval, unauthorized SSE blocked, SSE streaming, nonexistent run 404, terminal completion)
+  - `test_phase6_observability.py`: 19 passed (Prometheus metrics, OpenTelemetry traces, structured logs)
   - `test_phase6_patches.py`: 4 passed (diff validation, unified diff patching, ephemeral sandbox verification, authorization)
+  - `test_phase9_fuzzing.py`: 9 passed (adversarial HMAC tampering, diff traversal, prompt injection containment)
+  - `test_secret_governance.py`: 31 passed (KMS secret providers, production secret validation, redaction)
+  - `test_workspace_preparation.py`: 9 passed (tarball extraction traversal safety, GitHub archive download)
 
-### 3.2. Frontend Production Build
-- **Command:** `npm run build` (inside `frontend/`)
-- **Observed Result:** **Clean build in 16.56s** (Exit code: 0)
+### 3.2. Frontend Production Build & Lint
+- **Command:** `npm run lint` and `npm run build` (inside `frontend/`)
+- **Observed Result:** **ESLint 0 errors/warnings; clean build in 14.58s** (Exit code: 0)
 - **Artifacts:**
-  - `dist/index.html` (0.82 kB │ gzip: 0.46 kB)
-  - `dist/assets/index-ZT992Wjd.css` (2.61 kB │ gzip: 1.08 kB)
-  - `dist/assets/index-BobU5WpO.js` (222.36 kB │ gzip: 62.49 kB)
+  - `dist/index.html` (0.82 kB | gzip: 0.46 kB)
+  - `dist/assets/index-ZT992Wjd.css` (2.61 kB | gzip: 1.08 kB)
+  - `dist/assets/index-BobU5WpO.js` (222.40 kB | gzip: 62.52 kB)
   - 1578 modules transformed with zero TypeScript errors.
-
 ### 3.3. Nebius Live Provider Call Status
 - **Status:** **NOT RUN (Simulated in Automated Tests via Mock/Adapter)**
 - **Verification Details:** The live Nebius Token Factory call requires an active `NEBIUS_TOKEN_FACTORY_API_KEY`. In `test_phase4_analysis.py`, provider responses are verified using deterministic mock fixtures and simulated payload failures. While the adapter logic in `_call_nebius` is fully implemented and tested against real response schemas, a live call against the external Nebius endpoint remains unverified until staging credentials are provided.

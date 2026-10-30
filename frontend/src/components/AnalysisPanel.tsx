@@ -23,6 +23,18 @@ interface AnalysisPanelProps {
   onSelectEvidenceId: (id: string) => void
 }
 
+function formatProviderName(provider?: string | null): string {
+  if (!provider || provider === 'pending') return 'AI Provider'
+  const normalized = provider.toLowerCase().trim()
+  if (normalized === 'nvidia' || normalized === 'nvidia_nim') {
+    return 'NVIDIA NIM'
+  }
+  if (normalized === 'nebius' || normalized === 'nebius_token_factory') {
+    return 'Nebius Token Factory'
+  }
+  return provider
+}
+
 export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
   run,
   analysis,
@@ -82,7 +94,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
               lineHeight: 1.5,
             }}
           >
-            Submit this run's bounded evidence to an NVIDIA open-source model served via Nebius Token Factory for structured root-cause analysis.
+            Submit this run's bounded evidence to an authorized AI provider for structured root-cause analysis.
           </p>
         </div>
         <button
@@ -145,7 +157,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
             Diagnosis In Progress
           </h3>
           <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '440px' }}>
-            Calling {analysis.model_id} on Nebius Token Factory. Analysis state will update automatically once completed.
+            Calling {analysis.model_id}{analysis.provider && analysis.provider !== 'pending' ? ` on ${formatProviderName(analysis.provider)}` : ''}. Analysis state will update automatically once completed.
           </p>
         </div>
       </div>
@@ -195,7 +207,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
           </div>
           <div>
             <span style={{ color: 'var(--text-subtle)' }}>Provider: </span>
-            <span>{analysis.provider}</span>
+            <span>{formatProviderName(analysis.provider)}</span>
           </div>
           <div>
             <span style={{ color: 'var(--text-subtle)' }}>Model ID: </span>
@@ -313,7 +325,7 @@ export const AnalysisPanel: React.FC<AnalysisPanelProps> = ({
           <div>
             <div style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>Provider & Tokens</div>
             <div style={{ fontSize: '12px', fontWeight: 600 }}>
-              Nebius ({analysis.input_tokens || 0} in / {analysis.output_tokens || 0} out)
+              {formatProviderName(analysis.provider)} ({analysis.input_tokens || 0} in / {analysis.output_tokens || 0} out)
             </div>
           </div>
         </div>

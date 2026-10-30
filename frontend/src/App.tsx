@@ -234,7 +234,7 @@ export default function App() {
       const res = await api.requestAnalysis(activeRun.id)
       setActiveAnalysis(res)
       setBannerNotice({
-        message: 'AI diagnosis requested from Nebius Token Factory NVIDIA model. Streaming updates in real-time...',
+        message: 'AI diagnosis requested. Streaming updates in real-time...',
         type: 'info',
       })
       setTimeout(() => {
@@ -256,7 +256,7 @@ export default function App() {
       const res = await api.retryAnalysis(activeRun.id)
       setActiveAnalysis(res)
       setBannerNotice({
-        message: 'Analysis retry queued. Calling Nebius Token Factory...',
+        message: 'Analysis retry queued. Calling AI diagnosis provider...',
         type: 'info',
       })
       setTimeout(() => {
@@ -564,7 +564,7 @@ export default function App() {
         }}
       >
         <span>CodeSentinel Phase 7 &middot; Evidence-Led Regression Diagnosis &amp; Real-Time Telemetry</span>
-        <span>Apache 2.0 Open Source &middot; Powered by Nebius Token Factory &amp; NVIDIA Open Models</span>
+        <span>Apache 2.0 Open Source &middot; Evidence-Led Regression Diagnosis</span>
       </footer>
     </div>
   )

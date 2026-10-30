@@ -142,28 +142,48 @@ def test_circuit_breaker_trips_to_open_at_threshold():
     assert cb.can_execute() is False
 
 
-def test_circuit_breaker_transitions_to_half_open_after_timeout():
-    """Circuit transitions from OPEN to HALF_OPEN after recovery timeout."""
-    cb = CircuitBreaker(failure_threshold=2, recovery_timeout_seconds=0.05)
+def test_circuit_breaker_transitions_to_half_open_after_timeout(monkeypatch):
+    """Circuit transitions from OPEN to HALF_OPEN after recovery timeout.
+
+    Uses deterministic clock progression via monkeypatch to eliminate wall-clock
+    timing jitter and race conditions under heavy CI/runner CPU load.
+    """
+    simulated_time = 1000.0
+
+    def mock_monotonic():
+        return simulated_time
+
+    monkeypatch.setattr(time, "monotonic", mock_monotonic)
+
+    cb = CircuitBreaker(failure_threshold=2, recovery_timeout_seconds=30.0)
 
     cb.record_failure()
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
     assert cb.can_execute() is False
 
-    time.sleep(0.06)
+    # Advance simulated time past the 30.0s recovery timeout deterministically
+    simulated_time += 31.0
 
     assert cb.can_execute() is True
     assert cb.state == CircuitState.HALF_OPEN
 
 
-def test_circuit_breaker_half_open_single_probe_concurrency():
+def test_circuit_breaker_half_open_single_probe_concurrency(monkeypatch):
     """In HALF_OPEN state, only ONE recovery probe is allowed in flight at a time."""
-    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.03)
+    simulated_time = 1000.0
+
+    def mock_monotonic():
+        return simulated_time
+
+    monkeypatch.setattr(time, "monotonic", mock_monotonic)
+
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=30.0)
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
 
-    time.sleep(0.06)
+    # Advance simulated time past recovery timeout deterministically
+    simulated_time += 31.0
     assert cb.state == CircuitState.HALF_OPEN
     assert cb.probe_in_flight is False
 
@@ -199,13 +219,21 @@ def test_circuit_breaker_half_open_single_probe_concurrency():
     assert cb.can_execute() is True
 
 
-def test_circuit_breaker_half_open_failure_retrips_to_open():
+def test_circuit_breaker_half_open_failure_retrips_to_open(monkeypatch):
     """A failed probe in HALF_OPEN immediately re-trips back to OPEN and clears probe slot."""
-    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.03)
+    simulated_time = 1000.0
+
+    def mock_monotonic():
+        return simulated_time
+
+    monkeypatch.setattr(time, "monotonic", mock_monotonic)
+
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=30.0)
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
 
-    time.sleep(0.06)
+    # Advance simulated time past recovery timeout deterministically
+    simulated_time += 31.0
     assert cb.can_execute() is True
     assert cb.probe_in_flight is True
 
@@ -216,13 +244,21 @@ def test_circuit_breaker_half_open_failure_retrips_to_open():
     assert cb.can_execute() is False
 
 
-def test_circuit_breaker_release_probe_unblocks_subsequent_probe():
+def test_circuit_breaker_release_probe_unblocks_subsequent_probe(monkeypatch):
     """release_probe() clears the probe slot without altering failure counts or state."""
-    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=0.03)
+    simulated_time = 1000.0
+
+    def mock_monotonic():
+        return simulated_time
+
+    monkeypatch.setattr(time, "monotonic", mock_monotonic)
+
+    cb = CircuitBreaker(failure_threshold=1, recovery_timeout_seconds=30.0)
     cb.record_failure()
     assert cb.state == CircuitState.OPEN
 
-    time.sleep(0.06)
+    # Advance simulated time past recovery timeout deterministically
+    simulated_time += 31.0
     assert cb.can_execute() is True
     assert cb.probe_in_flight is True
     assert cb.can_execute() is False  # 2nd caller blocked
@@ -539,14 +575,21 @@ def test_run_analysis_permanent_auth_error_does_not_trip_circuit_breaker(
 
 
 def test_run_analysis_half_open_concurrent_probe_rejection(
-    db: Session, run_with_evidence: tuple[Run, list[EvidenceItem]]
+    db: Session, run_with_evidence: tuple[Run, list[EvidenceItem]], monkeypatch
 ):
     """When in HALF_OPEN, concurrent runs are rejected while the recovery probe is active."""
     run, evidence = run_with_evidence
     evidence_id = str(evidence[0].id)
 
+    simulated_time = [1000.0]
+
+    def mock_monotonic():
+        return simulated_time[0]
+
+    monkeypatch.setattr(time, "monotonic", mock_monotonic)
+
     analysis_svc.nebius_circuit_breaker.failure_threshold = 1
-    analysis_svc.nebius_circuit_breaker.recovery_timeout_seconds = 0.05
+    analysis_svc.nebius_circuit_breaker.recovery_timeout_seconds = 30.0
 
     # 1. Trip circuit breaker with 1 failure
     an1 = Analysis(
@@ -564,8 +607,8 @@ def test_run_analysis_half_open_concurrent_probe_rejection(
 
     assert analysis_svc.nebius_circuit_breaker.state == CircuitState.OPEN
 
-    # 2. Wait for recovery timeout
-    time.sleep(0.06)
+    # 2. Advance simulated time past recovery timeout deterministically
+    simulated_time[0] += 31.0
 
     # 3. Create two pending analyses
     an2 = Analysis(
@@ -642,17 +685,25 @@ def test_run_analysis_half_open_concurrent_probe_rejection(
 
 
 def test_run_analysis_exception_releases_probe_reservation(
-    db: Session, run_with_evidence: tuple[Run, list[EvidenceItem]]
+    db: Session, run_with_evidence: tuple[Run, list[EvidenceItem]], monkeypatch
 ):
     """An unexpected exception during probe execution releases probe slot so circuit does not freeze."""
     run, evidence = run_with_evidence
 
+    simulated_time = [1000.0]
+
+    def mock_monotonic():
+        return simulated_time[0]
+
+    monkeypatch.setattr(time, "monotonic", mock_monotonic)
+
     analysis_svc.nebius_circuit_breaker.failure_threshold = 1
-    analysis_svc.nebius_circuit_breaker.recovery_timeout_seconds = 0.05
+    analysis_svc.nebius_circuit_breaker.recovery_timeout_seconds = 30.0
     analysis_svc.nebius_circuit_breaker.record_failure()
     assert analysis_svc.nebius_circuit_breaker.state == CircuitState.OPEN
 
-    time.sleep(0.06)
+    # Advance simulated time past recovery timeout deterministically
+    simulated_time[0] += 31.0
 
     an = Analysis(
         run_id=run.id,

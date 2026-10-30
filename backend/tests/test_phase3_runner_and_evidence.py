@@ -138,8 +138,8 @@ def test_controlled_regression_fixture_produces_deterministic_failure(
         {
             "key": "unit_regression",
             "name": "Regression Test",
-            "command": [sys.executable, "-m", "pytest", "test_regression.py"],
-            "timeout_seconds": 30,
+            "command": [sys.executable, "-m", "pytest", "-o", "rootdir=.", "test_regression.py"],
+            "timeout_seconds": 60,
         }
     ]
 

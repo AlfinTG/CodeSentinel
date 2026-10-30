@@ -192,6 +192,13 @@ def process_github_delivery(
     # 4. Parse JSON payload
     try:
         payload = json.loads(raw_body.decode("utf-8"))
+        if not isinstance(payload, dict):
+            return WebhookResult(
+                accepted=False,
+                status_code=400,
+                error_code="payload_invalid",
+                reason="Webhook payload must be a JSON object",
+            )
     except Exception:
         return WebhookResult(
             accepted=False,
