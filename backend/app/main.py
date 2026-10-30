@@ -2,6 +2,8 @@
 
 import time
 import uuid
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_v1_router
 from app.core.config import settings
+from app.core.lifecycle import initialize_application
 from app.core.logging import (
     clear_log_context,
     configure_logging,
@@ -20,10 +23,19 @@ from app.core.telemetry import generate_metrics_payload, record_http_request
 # Initialize structured logging
 configure_logging(log_level=settings.LOG_LEVEL)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """FastAPI lifespan context manager ensuring secrets and DB are initialized on startup."""
+    initialize_application()
+    yield
+
+
 app = FastAPI(
     title="CodeSentinel API",
     description="Evidence-led regression diagnosis & repair verification",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 # CORS Middleware

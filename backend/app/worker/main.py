@@ -10,6 +10,7 @@ import signal
 import sys
 
 from app.core.config import settings
+from app.core.lifecycle import initialize_application
 from app.worker.worker import Worker
 
 
@@ -31,6 +32,9 @@ def main() -> None:
     )
     logger = logging.getLogger("codesentinel.worker")
     logger.info("Initializing CodeSentinel Worker Daemon...")
+
+    # Coordinate secret resolution, production validation, and database initialization
+    initialize_application()
 
     worker = Worker(
         worker_id=args.worker_id,
