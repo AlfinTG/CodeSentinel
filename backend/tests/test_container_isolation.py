@@ -70,6 +70,23 @@ from app.services.runner import (
     validate_workspace_path,
 )
 
+
+def _can_create_symlink() -> bool:
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            src = os.path.join(td, "src")
+            dst = os.path.join(td, "dst")
+            with open(src, "w") as f:
+                f.write("test")
+            os.symlink(src, dst)
+            return True
+    except OSError:
+        return False
+
+
+CAN_SYMLINK = _can_create_symlink()
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -243,7 +260,7 @@ def test_tc05c_file_as_cwd_rejected():
 # ===========================================================================
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Symlink creation requires elevated privileges on Windows")
+@pytest.mark.skipif(not CAN_SYMLINK, reason="Symlink creation requires elevated privileges on this host")
 def test_tc06_symlink_escape_in_cwd_rejected():
     """TC-06: A symlink cwd that resolves outside allowed_base is rejected."""
     with tempfile.TemporaryDirectory() as base, tempfile.TemporaryDirectory() as outside:
@@ -717,7 +734,7 @@ def test_tc23_phase1b_container_settings_present():
 # ===========================================================================
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Symlink creation requires elevated privileges on Windows")
+@pytest.mark.skipif(not CAN_SYMLINK, reason="Symlink creation requires elevated privileges on this host")
 def test_tc24_patch_workspace_copy_skips_symlink_escapes(tmp_path):
     """TC-24: execute_patch_verification workspace copy does not follow symlinks out of source_dir."""
     # Build a fake source directory with a dangling symlink to an outside path
@@ -856,7 +873,7 @@ def test_tc26_config_limits_reject_non_positive_values():
 # ===========================================================================
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Symlink creation requires elevated privileges on Windows")
+@pytest.mark.skipif(not CAN_SYMLINK, reason="Symlink creation requires elevated privileges on this host")
 def test_tc27_patch_target_symlink_rejected(tmp_path):
     """TC-27: apply_unified_diff rejects patching a file that is a symlink."""
     from app.services.patch import PatchSecurityViolationError, apply_unified_diff

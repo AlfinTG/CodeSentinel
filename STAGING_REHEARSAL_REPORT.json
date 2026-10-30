@@ -1,0 +1,76 @@
+{
+  "status": "PASSED",
+  "phase": "Phase 9: End-to-End Staging Rehearsal & Security Fuzzing",
+  "timestamp": "2026-10-30T12:32:03.176937+00:00",
+  "total_duration_sec": 14.603,
+  "suites": {
+    "adversarial_fuzzing": {
+      "suite": "Adversarial Fuzzing & Prompt Injection",
+      "passed": true,
+      "exit_code": 0,
+      "duration_sec": 3.783,
+      "output_tail": [
+        "backend\\tests\\test_phase9_fuzzing.py::test_fuzz_diff_size_limit_boundary PASSED [ 77%]",
+        "backend\\tests\\test_phase9_fuzzing.py::test_prompt_injection_containment_in_evidence PASSED [ 88%]",
+        "backend\\tests\\test_phase9_fuzzing.py::test_grounding_rejects_hallucinated_evidence_ids PASSED [100%]",
+        "",
+        "============================== 9 passed in 0.56s =============================="
+      ]
+    },
+    "migration_rollback": {
+      "suite": "Schema Migration Rollback",
+      "passed": true,
+      "exit_code": 0,
+      "duration_sec": 5.562,
+      "output_tail": [
+        "backend\\tests\\test_migration_rollback.py::test_alembic_single_head_invariant PASSED [ 66%]",
+        "backend\\tests\\test_migration_rollback.py::test_ensure_version_num_length_skips_when_already_64 PASSED [ 83%]",
+        "backend\\tests\\test_migration_rollback.py::test_ensure_version_num_length_is_logged_not_silenced PASSED [100%]",
+        "",
+        "============================== 6 passed in 2.25s =============================="
+      ]
+    },
+    "disaster_recovery_drill": {
+      "suite": "Disaster Recovery Reconstitution Drill",
+      "passed": true,
+      "exit_code": 0,
+      "duration_sec": 1.533,
+      "drill_metrics": {
+        "rto_achieved_sec": 0.0343,
+        "rto_threshold_sec": 1800,
+        "rto_compliant": true,
+        "rpo_achieved_sec": 0,
+        "rpo_threshold_sec": 300,
+        "rpo_compliant": true,
+        "backup_duration_sec": 0.0202,
+        "total_drill_duration_sec": 0.1706
+      }
+    },
+    "load_benchmark": {
+      "suite": "Webhook Ingestion Load Benchmark",
+      "passed": true,
+      "total_requests": 100,
+      "concurrency": 10,
+      "success_count": 100,
+      "duration_sec": 0.788,
+      "requests_per_second": 126.9,
+      "p50_latency_ms": 47.93,
+      "p95_latency_ms": 273.04,
+      "p99_latency_ms": 318.57
+    },
+    "soak_and_telemetry_probe": {
+      "suite": "Stability & Prometheus Metrics Probe",
+      "passed": true,
+      "live_health_probe": true,
+      "ready_probe": true,
+      "metrics_probe": true
+    }
+  },
+  "staging_acceptance_criteria": {
+    "prompt_injection_tamper_prevention": true,
+    "zero_downtime_reversible_migrations": true,
+    "disaster_recovery_reconstitution_fidelity_100pct": true,
+    "webhook_ingestion_throughput_and_latency": true,
+    "continuous_health_and_metrics_integrity": true
+  }
+}

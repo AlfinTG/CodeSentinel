@@ -1,0 +1,19 @@
+# ==============================================================================
+# CodeSentinel GCP Workload Identity Manifest (GCP Secret Manager)
+# ------------------------------------------------------------------------------
+# Binds the Kubernetes ServiceAccount to a Google Cloud Service Account with
+# Secret Accessor role to pull production credentials directly into memory.
+# ==============================================================================
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: codesentinel-backend-sa
+  namespace: codesentinel
+  annotations:
+    iam.gke.io/gcp-service-account: codesentinel-backend@my-project-id.iam.gserviceaccount.com
+---
+# Shell command for initial IAM binding:
+# gcloud secrets add-iam-policy-binding codesentinel-prod-secrets \
+#     --member="serviceAccount:codesentinel-backend@my-project-id.iam.gserviceaccount.com" \
+#     --role="roles/secretmanager.secretAccessor"
