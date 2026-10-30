@@ -2,7 +2,6 @@ import { useEffect, useState, useCallback } from 'react'
 import {
   AlertCircle,
   FolderGit2,
-  CheckCircle2,
   Info,
 } from 'lucide-react'
 import {
@@ -15,12 +14,18 @@ import {
   EvidenceItem,
   Analysis,
   PatchAttempt,
+  LifecycleStatus,
+  TestOutcome,
+  AnalysisOutcome,
 } from './types'
 import { api } from './services/api'
 import { Navbar } from './components/Navbar'
 import { RunList } from './components/RunList'
 import { RunDetailView } from './components/RunDetailView'
 import { useRunEvents } from './hooks/useRunEvents'
+
+
+const getErrorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 export default function App() {
   // Global & System state
@@ -53,6 +58,18 @@ export default function App() {
   const [cancellingRun, setCancellingRun] = useState<boolean>(false)
   const [bannerNotice, setBannerNotice] = useState<{ message: string; type: 'info' | 'error' } | null>(null)
 
+  const loadProjects = useCallback(async () => {
+    try {
+      const items = await api.getProjects()
+      setProjects(items)
+      if (items.length > 0 && !selectedProjectId) {
+        setSelectedProjectId(items[0].id)
+      }
+    } catch (err: unknown) {
+      console.error('Failed to load projects:', err)
+    }
+  }, [selectedProjectId])
+
   // 1. Initial health & projects load
   useEffect(() => {
     api
@@ -61,25 +78,13 @@ export default function App() {
         setHealth(data)
         setHealthLoading(false)
       })
-      .catch((err) => {
-        setHealthError(err.message)
+      .catch((err: unknown) => {
+        setHealthError(getErrorMessage(err))
         setHealthLoading(false)
       })
 
     loadProjects()
-  }, [])
-
-  const loadProjects = async () => {
-    try {
-      const items = await api.getProjects()
-      setProjects(items)
-      if (items.length > 0 && !selectedProjectId) {
-        setSelectedProjectId(items[0].id)
-      }
-    } catch (err: any) {
-      console.error('Failed to load projects:', err)
-    }
-  }
+  }, [loadProjects])
 
   // 2. Load runs when selectedProjectId changes
   const loadRuns = useCallback(async (projectId: string) => {
@@ -93,8 +98,8 @@ export default function App() {
       } else {
         setSelectedRunId(null)
       }
-    } catch (err: any) {
-      setBannerNotice({ message: `Failed to load runs: ${err.message}`, type: 'error' })
+    } catch (err: unknown) {
+      setBannerNotice({ message: `Failed to load runs: ${getErrorMessage(err)}`, type: 'error' })
     } finally {
       setRunsLoading(false)
     }
@@ -129,8 +134,8 @@ export default function App() {
       } catch {
         setActiveAnalysis(null)
       }
-    } catch (err: any) {
-      setBannerNotice({ message: `Error loading run detail: ${err.message}`, type: 'error' })
+    } catch (err: unknown) {
+      setBannerNotice({ message: `Error loading run detail: ${getErrorMessage(err)}`, type: 'error' })
     } finally {
       setDetailLoading(false)
     }
@@ -156,9 +161,9 @@ export default function App() {
         if (!prev || prev.id !== snapshot.run_id) return prev
         return {
           ...prev,
-          lifecycle_status: snapshot.lifecycle_status as any,
-          test_outcome: snapshot.test_outcome as any,
-          analysis_outcome: snapshot.analysis_outcome as any,
+          lifecycle_status: snapshot.lifecycle_status as LifecycleStatus,
+          test_outcome: snapshot.test_outcome as TestOutcome,
+          analysis_outcome: snapshot.analysis_outcome as AnalysisOutcome,
           started_at: snapshot.started_at,
           completed_at: snapshot.completed_at,
         }
@@ -168,9 +173,9 @@ export default function App() {
           r.id === snapshot.run_id
             ? {
                 ...r,
-                lifecycle_status: snapshot.lifecycle_status as any,
-                test_outcome: snapshot.test_outcome as any,
-                analysis_outcome: snapshot.analysis_outcome as any,
+                lifecycle_status: snapshot.lifecycle_status as LifecycleStatus,
+                test_outcome: snapshot.test_outcome as TestOutcome,
+                analysis_outcome: snapshot.analysis_outcome as AnalysisOutcome,
               }
             : r
         )
@@ -214,8 +219,8 @@ export default function App() {
         message: 'Demo project loaded: baseline passing run, regression with AI diagnosis, and in-flight runs ready.',
         type: 'info',
       })
-    } catch (err: any) {
-      setBannerNotice({ message: `Seeding error: ${err.message}`, type: 'error' })
+    } catch (err: unknown) {
+      setBannerNotice({ message: `Seeding error: ${getErrorMessage(err)}`, type: 'error' })
     } finally {
       setSeeding(false)
     }
@@ -236,8 +241,8 @@ export default function App() {
         if (selectedProjectId) loadRuns(selectedProjectId)
         loadRunDetail(activeRun.id)
       }, 1000)
-    } catch (err: any) {
-      setBannerNotice({ message: `Analysis request error: ${err.message}`, type: 'error' })
+    } catch (err: unknown) {
+      setBannerNotice({ message: `Analysis request error: ${getErrorMessage(err)}`, type: 'error' })
     } finally {
       setTriggeringAnalysis(false)
     }
@@ -258,8 +263,8 @@ export default function App() {
         if (selectedProjectId) loadRuns(selectedProjectId)
         loadRunDetail(activeRun.id)
       }, 1000)
-    } catch (err: any) {
-      setBannerNotice({ message: `Retry error: ${err.message}`, type: 'error' })
+    } catch (err: unknown) {
+      setBannerNotice({ message: `Retry error: ${getErrorMessage(err)}`, type: 'error' })
     } finally {
       setTriggeringAnalysis(false)
     }
@@ -274,8 +279,8 @@ export default function App() {
       setActiveRun((prev) => (prev ? { ...prev, ...updated } : null))
       setBannerNotice({ message: `Run ${activeRun.id.substring(0, 8)} cancelled.`, type: 'info' })
       if (selectedProjectId) loadRuns(selectedProjectId)
-    } catch (err: any) {
-      setBannerNotice({ message: `Cancel error: ${err.message}`, type: 'error' })
+    } catch (err: unknown) {
+      setBannerNotice({ message: `Cancel error: ${getErrorMessage(err)}`, type: 'error' })
     } finally {
       setCancellingRun(false)
     }
@@ -295,8 +300,8 @@ export default function App() {
           : `Candidate patch tested in isolated sandbox. Status: ${newAttempt.status}.`,
         type: isVerified ? 'info' : 'error',
       })
-    } catch (err: any) {
-      setBannerNotice({ message: `Patch error: ${err.message}`, type: 'error' })
+    } catch (err: unknown) {
+      setBannerNotice({ message: `Patch error: ${getErrorMessage(err)}`, type: 'error' })
     } finally {
       setTriggeringPatch(false)
     }

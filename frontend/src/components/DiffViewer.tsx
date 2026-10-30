@@ -120,10 +120,16 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
     }
   }, [diffText])
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(diffText)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const copyToClipboard = async () => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(diffText)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    } catch (err) {
+      console.warn('Failed to copy diff to clipboard:', err)
+    }
   }
 
   return (

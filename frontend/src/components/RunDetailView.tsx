@@ -58,10 +58,16 @@ export const RunDetailView: React.FC<RunDetailViewProps> = ({
   const [highlightedEvidenceId, setHighlightedEvidenceId] = useState<string | null>(null)
   const [copiedSha, setCopiedSha] = useState<boolean>(false)
 
-  const copySha = () => {
-    navigator.clipboard.writeText(run.head_sha)
-    setCopiedSha(true)
-    setTimeout(() => setCopiedSha(false), 1500)
+  const copySha = async () => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(run.head_sha)
+        setCopiedSha(true)
+        setTimeout(() => setCopiedSha(false), 1500)
+      }
+    } catch (err) {
+      console.warn('Failed to copy SHA to clipboard:', err)
+    }
   }
 
   const handleSelectEvidenceId = (evidenceId: string) => {

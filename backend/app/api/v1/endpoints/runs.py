@@ -2,15 +2,12 @@
 
 import asyncio
 import json
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import sessionmaker
-
-
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy.orm import Session
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.deps import get_authorized_project, get_current_user
 from app.db.session import get_db
@@ -362,6 +359,8 @@ async def stream_run_events(
     request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    max_duration_seconds: float = Query(300.0, ge=0.01, le=3600.0),
+    poll_interval: float = Query(0.8, ge=0.01, le=10.0),
 ):
     """Server-Sent Events (SSE) stream for real-time run execution updates and check output.
 
@@ -370,11 +369,12 @@ async def stream_run_events(
     """
     _authorize_run_access(run_id, current_user, db, request)
     session_factory = sessionmaker(bind=db.get_bind())
+    # Release initial request-scoped authorization session back to connection pool
+    # so long-lived streaming does not hold an idle database connection.
+    db.close()
 
     async def event_generator():
         last_state = None
-        max_duration_seconds = 300
-        poll_interval = 0.8
         elapsed = 0.0
 
         try:

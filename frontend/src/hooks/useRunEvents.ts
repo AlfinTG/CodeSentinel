@@ -32,7 +32,7 @@ interface UseRunEventsOptions {
   enabled?: boolean
   onUpdate?: (snapshot: RunEventSnapshot) => void
   onComplete?: (status: string) => void
-  onError?: (err: any) => void
+  onError?: (err: unknown) => void
 }
 
 export function useRunEvents(
