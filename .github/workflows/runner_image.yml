@@ -1,0 +1,88 @@
+name: Build & Publish Isolated Runner Container (Phase 1)
+
+on:
+  push:
+    branches: [main, prashant]
+    paths:
+      - "runner/**"
+      - ".github/workflows/runner_image.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-test-runner:
+    name: Build & Verify Hardened Runner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Runner Image Locally
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: runner/Dockerfile
+          load: true
+          tags: codesentinel-runner:test
+
+      - name: Verify Container Security & Isolation Controls
+        run: |
+          echo "=== 1. Verifying Non-Root User Identity ==="
+          USER_ID=$(docker run --rm codesentinel-runner:test id -u)
+          if [ "$USER_ID" != "10001" ]; then
+            echo "Security Error: Expected UID 10001, got $USER_ID"
+            exit 1
+          fi
+
+          echo "=== 2. Verifying Read-Only Root Filesystem with tmpfs ==="
+          docker run --rm \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+            --user 10001:10001 \
+            codesentinel-runner:test \
+            python -c "import os; print('Read-only test passed. Temporary dir:', os.getenv('TMPDIR', '/tmp'))"
+
+          echo "=== 3. Verifying Network Default-Deny (--network none) ==="
+          docker run --rm \
+            --network none \
+            codesentinel-runner:test \
+            python -c "
+          import socket
+          try:
+              socket.create_connection(('1.1.1.1', 80), timeout=1)
+              print('FAIL: Network is reachable under --network none')
+              exit(1)
+          except Exception:
+              print('PASS: Network unreachable under --network none')
+          "
+
+          echo "=== 4. Verifying Allowlisted Binary Toolchains ==="
+          docker run --rm codesentinel-runner:test python --version
+          docker run --rm codesentinel-runner:test pytest --version
+          docker run --rm codesentinel-runner:test node --version
+          docker run --rm codesentinel-runner:test npm --version
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Push to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: runner/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/codesentinel-runner:latest
+            ghcr.io/${{ github.repository_owner }}/codesentinel-runner:${{ github.sha }}
