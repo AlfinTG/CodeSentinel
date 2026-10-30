@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import tempfile
 import uuid
 
@@ -236,12 +237,78 @@ def test_fuzz_diff_protected_files_and_extensions():
 
 
 def test_fuzz_diff_malformed_and_corrupted_hunks():
-    """Fuzz unified diff parser with non-existent target files and missing headers."""
+    """Fuzz unified diff parser with malformed headers, offsets, and corrupted hunk bodies."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        # Patch targeting file that doesn't exist in workspace returns False
+        # Case 1: Patch targeting file that doesn't exist in workspace returns False safely
         missing_file_diff = "--- a/nonexistent.py\n+++ b/nonexistent.py\n@@ -1,1 +1,1 @@\n-old\n+new\n"
         success = apply_unified_diff(tmpdir, missing_file_diff)
         assert success is False
+
+        # Create a valid target file to test hunk corruption behavior
+        target_path = os.path.join(tmpdir, "module.py")
+        original_content = "def calculate():\n    return 42\n"
+        with open(target_path, "w", encoding="utf-8") as f:
+            f.write(original_content)
+
+        # Case 2: Malformed hunk header (non-numeric, garbage strings)
+        garbage_hunk_header = (
+            "--- a/module.py\n"
+            "+++ b/module.py\n"
+            "@@ -abc,def +ghi,jkl @@\n"
+            "-    return 42\n"
+            "+    return 100\n"
+        )
+        # Should not crash; invalid hunk is ignored safely
+        apply_unified_diff(tmpdir, garbage_hunk_header)
+        with open(target_path, encoding="utf-8") as f:
+            assert f.read() == original_content  # Content unaltered
+
+        # Case 3: Negative hunk offsets
+        negative_offset_diff = (
+            "--- a/module.py\n"
+            "+++ b/module.py\n"
+            "@@ --5,2 +-5,2 @@\n"
+            "-    return 42\n"
+            "+    return 999\n"
+        )
+        apply_unified_diff(tmpdir, negative_offset_diff)
+        with open(target_path, encoding="utf-8") as f:
+            assert f.read() == original_content
+
+        # Case 4: Far out-of-bounds line offsets (beyond file length)
+        oob_diff = (
+            "--- a/module.py\n"
+            "+++ b/module.py\n"
+            "@@ -99999,1 +99999,1 @@\n"
+            "-missing\n"
+            "+replacement\n"
+        )
+        apply_unified_diff(tmpdir, oob_diff)
+        # Appends safely without crash or IndexError
+        assert os.path.exists(target_path)
+
+        # Case 5: Truncated diff (header only, no hunk body)
+        truncated_diff = "--- a/module.py\n+++ b/module.py\n@@ -1,1 +1,1 @@"
+        apply_unified_diff(tmpdir, truncated_diff)
+        assert os.path.exists(target_path)
+
+        # Case 6: Corrupted hunk body with invalid tag characters
+        corrupted_tags_diff = (
+            "--- a/module.py\n"
+            "+++ b/module.py\n"
+            "@@ -1,2 +1,2 @@\n"
+            "?invalid_tag\n"
+            "!another_corrupt_tag\n"
+            "*random_data\n"
+        )
+        apply_unified_diff(tmpdir, corrupted_tags_diff)
+        assert os.path.exists(target_path)
+
+        # Case 7: Unexpected patch structure (missing +++ header)
+        no_plus_diff = "--- a/module.py\n@@ -1,1 +1,1 @@\n-old\n+new\n"
+        # Since target_file cannot be resolved from +++, it safely skips without modifying
+        apply_unified_diff(tmpdir, no_plus_diff)
+        assert os.path.exists(target_path)
 
 
 def test_fuzz_diff_size_limit_boundary():

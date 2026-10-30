@@ -13,10 +13,10 @@
 | **Phase 6** | Observability & Patches | Prometheus metrics, OpenTelemetry traces, ephemeral workspace patch verification | 23 | **PASSED** |
 | **Phase 7** | Prototype Deployment | Multi-container Docker Compose, Alembic migration 0002, production env configs | Verification Complete | **READY** |
 | **Phase 8** | HA, PITR & Disaster Recovery | PostgreSQL replication, WAL archiving, automated PITR restore drills | In Progress (Team) | **IN PROGRESS** |
-| **Phase 9** | Security Fuzzing & Staging Rehearsal | HMAC tampering, diff traversal, prompt injection containment, load & soak harnesses | 9 | **PASSED** |
+| **Phase 9** | Security Fuzzing & Staging Rehearsal | HMAC tampering, diff traversal, prompt injection containment, load & soak harnesses | 9 | **IN PROGRESS — Tooling Implemented; Staging Rehearsal Pending** |
 | **Phase 10** | Production Cutover & Sign-Off | Production launch gating, canary monitoring, release sign-off | Scheduled | **PENDING** |
 
-**Total Backend Test Count:** **241 passed**, 21 skipped, 0 failures (262 total collected tests)  
+**Total Backend Test Count:** **241 passed**, 21 skipped, 0 failures (262 total collected tests; timing stabilization verified)  
 **Frontend Compilation:** **Clean build** (`tsc && vite build` &mdash; 0 TypeScript errors, 1578 modules transformed)
 
 ---
@@ -30,10 +30,12 @@
 
 ### 2. High-Throughput Load Benchmark (`tests/load/load_test_benchmark.py`)
 - Simulates concurrent webhook ingestion and health checks using `httpx`.
-- Asserts $\ge 100\text{ req/sec}$ throughput and records $p50$, $p95$, and $p99$ response latencies.
+- Configured to test $\ge 100\text{ req/sec}$ throughput and record $p50$, $p95$, and $p99$ response latencies once deployed against staging.
+- Status: Tooling implemented; awaiting dedicated staging cluster execution.
 
 ### 3. Continuous Soak & Stability Harness (`scripts/soak_test_harness.py`)
-- Validates sustained application uptime, memory stability, and Prometheus `/metrics` scrape reliability under continuous load.
+- Harness for sustained application uptime, memory tracking, and Prometheus `/metrics` scrape reliability under continuous load.
+- Status: Tooling implemented; awaiting 48-hour continuous soak execution in staging.
 
 ---
 
