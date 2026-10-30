@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """CodeSentinel Phase 9 End-to-End Staging Rehearsal & Security Fuzzing Orchestrator.
 
-Orchestrates the complete staging pre-production validation suite:
+Orchestrates the pre-production validation suite:
 1. Security & Adversarial Fuzzing: Prompt injection, evidence spoofing, HMAC forgery.
 2. Migration Rollback & Bidirectional Schema Safety: Alembic upgrade/downgrade cycle.
 3. Disaster Recovery Reconstitution Drill: AES-256-GCM backup, restore, RTO/RPO verification.
-4. High-Throughput Load & Webhook Intake Benchmark: Target >= 100 req/sec, p99 < 50ms.
-5. Stability & Soak Health Probe Inspection: Process RSS memory and zero restart verification.
-6. Emits STAGING_REHEARSAL_REPORT.json.
+4. High-Throughput Load & Webhook Intake Benchmark: Target >= 100 req/sec, p99 < 50ms, 100% success.
+5. In-Process Health & Telemetry Probe: Validates liveness, readiness, and metrics generation.
+   (Note: Distinguishes local in-process testing from a sustained 48-hour soak test on deployed infrastructure.)
+6. Emits STAGING_REHEARSAL_REPORT.json with explicit thresholds and actual measurements.
 """
 
 from __future__ import annotations
@@ -27,6 +28,9 @@ from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 BACKEND_DIR = ROOT_DIR / "backend"
+
+LOAD_BENCHMARK_MIN_RPS = 100.0
+LOAD_BENCHMARK_MAX_P99_MS = 50.0
 
 
 def run_command_buffered(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
@@ -110,7 +114,13 @@ def run_dr_drill(python_exe: str) -> dict:
 
 
 async def run_in_process_benchmark(requests_count: int = 100, concurrency: int = 10) -> dict:
-    """Run in-process webhook intake load benchmark using FastAPI ASGI transport."""
+    """Run in-process webhook intake load benchmark using FastAPI ASGI transport.
+
+    Enforces Phase 9 SLA thresholds:
+      - Throughput: >= 100 requests/sec
+      - P99 Latency: < 50 ms
+      - Success Rate: 100% of requests successful
+    """
     print(f"--> [4/5] Executing Webhook Ingestion Load Benchmark ({requests_count} requests, concurrency={concurrency})...")
     import httpx
     from app.core.config import settings
@@ -158,12 +168,44 @@ async def run_in_process_benchmark(requests_count: int = 100, concurrency: int =
     p95 = statistics.quantiles(latencies, n=20)[18] if len(latencies) >= 20 else p50
     p99 = statistics.quantiles(latencies, n=100)[98] if len(latencies) >= 100 else p95
 
-    passed = (success_count == requests_count) and (req_per_sec >= 50.0 or p99 < 50.0)
-    print(f"    Load Result: {req_per_sec:.1f} req/s, p50={p50:.2f}ms, p99={p99:.2f}ms (Success: {success_count}/{requests_count})")
+    throughput_met = req_per_sec >= LOAD_BENCHMARK_MIN_RPS
+    latency_met = p99 < LOAD_BENCHMARK_MAX_P99_MS
+    success_met = (success_count == requests_count) and (requests_count > 0)
+    passed = bool(throughput_met and latency_met and success_met)
+
+    print(
+        f"    Load Result: {req_per_sec:.1f} req/s (threshold: >= {LOAD_BENCHMARK_MIN_RPS}), "
+        f"p50={p50:.2f}ms, p99={p99:.2f}ms (threshold: < {LOAD_BENCHMARK_MAX_P99_MS}ms), "
+        f"Success: {success_count}/{requests_count} -> {'PASSED' if passed else 'FAILED'}"
+    )
+
+    thresholds = {
+        "min_requests_per_second": LOAD_BENCHMARK_MIN_RPS,
+        "max_p99_latency_ms": LOAD_BENCHMARK_MAX_P99_MS,
+        "min_success_rate_pct": 100.0,
+    }
+    measurements = {
+        "total_requests": requests_count,
+        "concurrency": concurrency,
+        "success_count": success_count,
+        "success_rate_pct": round((success_count / requests_count * 100.0) if requests_count else 0.0, 2),
+        "duration_sec": round(total_sec, 3),
+        "requests_per_second": round(req_per_sec, 2),
+        "p50_latency_ms": round(p50, 2),
+        "p95_latency_ms": round(p95, 2),
+        "p99_latency_ms": round(p99, 2),
+    }
 
     return {
-        "suite": "Webhook Ingestion Load Benchmark",
+        "suite": "Webhook Ingestion Load Benchmark (In-Process ASGI)",
         "passed": passed,
+        "execution_environment": "in_process_asgi",
+        "thresholds": thresholds,
+        "measurements": measurements,
+        "throughput_met": throughput_met,
+        "latency_met": latency_met,
+        "success_rate_met": success_met,
+        # Backwards-compatible flat keys
         "total_requests": requests_count,
         "concurrency": concurrency,
         "success_count": success_count,
@@ -176,8 +218,12 @@ async def run_in_process_benchmark(requests_count: int = 100, concurrency: int =
 
 
 async def run_soak_probe_iteration() -> dict:
-    """Run an automated soak probe iteration verifying process health and metric endpoints."""
-    print("--> [5/5] Executing Staging Stability & Prometheus Metrics Probe...")
+    """Run an automated in-process health and metrics probe.
+
+    Validates liveness, readiness, and Prometheus metric generation in-process.
+    Note: A single probe does NOT constitute a continuous 48-hour staging soak test.
+    """
+    print("--> [5/5] Executing In-Process Health & Prometheus Telemetry Probe...")
     import httpx
     from app.main import app
 
@@ -196,14 +242,17 @@ async def run_soak_probe_iteration() -> dict:
         metrics_ok = metrics_resp.status_code == 200 and "codesentinel_" in metrics_resp.text
 
     passed = health_ok and ready_ok and metrics_ok
-    print(f"    Probe Result: Health={health_ok}, Ready={ready_ok}, Metrics={metrics_ok}")
+    print(f"    Probe Result: Health={health_ok}, Ready={ready_ok}, Metrics={metrics_ok} (In-process probe, not 48h soak)")
 
     return {
-        "suite": "Stability & Prometheus Metrics Probe",
+        "suite": "Health & Prometheus Telemetry Endpoint Probe (In-Process)",
         "passed": passed,
+        "execution_environment": "in_process_asgi",
         "live_health_probe": health_ok,
         "ready_probe": ready_ok,
         "metrics_probe": metrics_ok,
+        "is_sustained_soak": False,
+        "note": "Validates liveness, readiness, and Prometheus metric generation in-process; does not constitute a sustained 48h soak test.",
     }
 
 
@@ -222,7 +271,7 @@ def execute_staging_rehearsal(report_path: Path) -> dict:
     load_res = asyncio.run(run_in_process_benchmark(requests_count=100, concurrency=10))
     soak_res = asyncio.run(run_soak_probe_iteration())
 
-    all_passed = (
+    all_passed = bool(
         fuzzing_res["passed"]
         and migration_res["passed"]
         and dr_res["passed"]
@@ -237,6 +286,8 @@ def execute_staging_rehearsal(report_path: Path) -> dict:
         "phase": "Phase 9: End-to-End Staging Rehearsal & Security Fuzzing",
         "timestamp": datetime.now(UTC).isoformat(),
         "total_duration_sec": total_dur,
+        "test_execution_mode": "local_in_process",
+        "staging_infrastructure_deployed": False,
         "suites": {
             "adversarial_fuzzing": fuzzing_res,
             "migration_rollback": migration_res,
@@ -250,6 +301,7 @@ def execute_staging_rehearsal(report_path: Path) -> dict:
             "disaster_recovery_reconstitution_fidelity_100pct": dr_res["passed"],
             "webhook_ingestion_throughput_and_latency": load_res["passed"],
             "continuous_health_and_metrics_integrity": soak_res["passed"],
+            "sustained_48h_staging_soak_verified": False,
         },
     }
 

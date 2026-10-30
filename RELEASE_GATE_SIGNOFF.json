@@ -1,20 +1,22 @@
 {
   "release_candidate": "v1.0.0-rc1",
-  "timestamp": "2026-10-30T12:36:57.073131+00:00",
-  "overall_status": "APPROVED_FOR_PRODUCTION",
-  "gates_passed": 10,
+  "timestamp": "2026-10-30T15:16:22.399693+00:00",
+  "overall_status": "REJECTED_GATES_FAILED",
+  "gates_passed": 6,
   "total_gates": 10,
-  "completion_percentage": 100.0,
+  "completion_percentage": 60.0,
   "results": [
     {
       "gate": 1,
       "name": "Runner Hardening & True Container Isolation",
-      "passed": true,
-      "status": "PASSED",
-      "reason": "Enforces non-root UID 10001, isolated runner CI pipeline",
-      "duration_sec": 0.001,
+      "passed": false,
+      "status": "UNVERIFIED",
+      "reason": "Static Dockerfile non-root UID 10001 and CI workflow verified, but runtime container isolation is unverified (no container daemon or execution evidence)",
+      "duration_sec": 0.067,
       "metadata": {
-        "dockerfile": "D:\\Projects\\CodeSentinel\\runner\\Dockerfile"
+        "dockerfile": "D:\\Projects\\CodeSentinel\\runner\\Dockerfile",
+        "daemon_available": false,
+        "runtime_evidence": false
       }
     },
     {
@@ -23,7 +25,7 @@
       "passed": true,
       "status": "PASSED",
       "reason": "Alembic migrations verified (4 versions with reversible downgrade)",
-      "duration_sec": 0.002,
+      "duration_sec": 0.001,
       "metadata": {
         "versions_count": 4
       }
@@ -52,7 +54,7 @@
       "passed": true,
       "status": "PASSED",
       "reason": "Cloud KMS Workload Identity & IRSA manifests present; zero secrets in git",
-      "duration_sec": 0.128,
+      "duration_sec": 0.133,
       "metadata": {}
     },
     {
@@ -67,47 +69,83 @@
     {
       "gate": 7,
       "name": "Frontend Production Build & WCAG 2.1 AA A11y",
-      "passed": true,
-      "status": "PASSED",
-      "reason": "Frontend production bundle compiled; Playwright E2E and WCAG 2.1 AA specs verified",
-      "duration_sec": 0.0,
-      "metadata": {}
+      "passed": false,
+      "status": "UNVERIFIED",
+      "reason": "Frontend production bundle compiled and test specs exist, but Playwright E2E and WCAG 2.1 AA test execution results are unverified",
+      "duration_sec": 0.001,
+      "metadata": {
+        "bundle": "D:\\Projects\\CodeSentinel\\frontend\\dist\\index.html",
+        "test_specs": [
+          "D:\\Projects\\CodeSentinel\\frontend\\tests\\accessibility.spec.ts",
+          "D:\\Projects\\CodeSentinel\\frontend\\tests\\e2e_user_flow.spec.ts"
+        ],
+        "test_execution_verified": false
+      }
     },
     {
       "gate": 8,
       "name": "Disaster Recovery Reconstitution Drill (RTO/RPO)",
       "passed": true,
       "status": "PASSED",
-      "reason": "DR drill passed with 100% data fidelity (RTO: 0.0343s <= 1800s, RPO: 0s)",
+      "reason": "DR drill passed on ephemeral SQLite simulation with 100% data fidelity (RTO: 0.0205s <= 1800s, RPO: 0s <= 300s, AES-256-GCM tamper-checked); production PostgreSQL WAL archiving/restore unverified",
       "duration_sec": 0.001,
       "metadata": {
-        "rto_achieved_sec": 0.0343,
-        "rto_threshold_sec": 1800,
-        "rto_compliant": true,
-        "rpo_achieved_sec": 0,
-        "rpo_threshold_sec": 300,
-        "rpo_compliant": true,
-        "backup_duration_sec": 0.0202,
-        "total_drill_duration_sec": 0.1706
+        "metrics": {
+          "rto_achieved_sec": 0.0205,
+          "rto_threshold_sec": 1800,
+          "rto_compliant": true,
+          "rpo_achieved_sec": 0,
+          "rpo_threshold_sec": 300,
+          "rpo_compliant": true,
+          "backup_duration_sec": 0.0112,
+          "total_drill_duration_sec": 0.1112
+        },
+        "verifications": {
+          "checksum_sidecar_validated": true,
+          "tamper_detection_prevented_corruption": true,
+          "catastrophic_wipe_reconstituted": true,
+          "data_fidelity_pct": 100.0,
+          "records_recovered": {
+            "projects": 1,
+            "runs": 1,
+            "evidence": 1,
+            "analyses": 1
+          }
+        },
+        "database_url_type": "ephemeral-sqlite"
       }
     },
     {
       "gate": 9,
       "name": "Staging Rehearsal & High-Throughput Load Verification",
-      "passed": true,
-      "status": "PASSED",
-      "reason": "End-to-end staging rehearsal passed across all 5 verification suites",
+      "passed": false,
+      "status": "FAILED",
+      "reason": "Load benchmark p99 latency 318.57ms failed SLA threshold (< 50.0ms required)",
       "duration_sec": 0.001,
-      "metadata": {}
+      "metadata": {
+        "suite": "Webhook Ingestion Load Benchmark",
+        "passed": true,
+        "total_requests": 100,
+        "concurrency": 10,
+        "success_count": 100,
+        "duration_sec": 0.788,
+        "requests_per_second": 126.9,
+        "p50_latency_ms": 47.93,
+        "p95_latency_ms": 273.04,
+        "p99_latency_ms": 318.57
+      }
     },
     {
       "gate": 10,
       "name": "Production Reverse Proxy, TLS 1.3 & Rate Limiting",
-      "passed": true,
-      "status": "PASSED",
-      "reason": "Nginx TLS 1.3 reverse proxy, rate limiting, and unbuffered SSE telemetry validated",
+      "passed": false,
+      "status": "UNVERIFIED",
+      "reason": "Static Nginx configuration validated (TLSv1.3, rate limiting, unbuffered SSE), but live TLS termination and reverse proxy deployment are unverified",
       "duration_sec": 0.0,
-      "metadata": {}
+      "metadata": {
+        "conf": "D:\\Projects\\CodeSentinel\\deploy\\nginx\\codesentinel.conf",
+        "live_tls_verified": false
+      }
     }
   ]
 }

@@ -1,17 +1,17 @@
 {
   "status": "PASSED",
   "phase": "Phase 8: Automated Disaster Recovery & Backup Reconstitution",
-  "timestamp": "2026-10-30T12:31:59.255462+00:00",
+  "timestamp": "2026-10-30T14:37:24.633175+00:00",
   "database_url_type": "ephemeral-sqlite",
   "metrics": {
-    "rto_achieved_sec": 0.0343,
+    "rto_achieved_sec": 0.0205,
     "rto_threshold_sec": 1800,
     "rto_compliant": true,
     "rpo_achieved_sec": 0,
     "rpo_threshold_sec": 300,
     "rpo_compliant": true,
-    "backup_duration_sec": 0.0202,
-    "total_drill_duration_sec": 0.1706
+    "backup_duration_sec": 0.0112,
+    "total_drill_duration_sec": 0.1112
   },
   "verifications": {
     "checksum_sidecar_validated": true,
