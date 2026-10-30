@@ -110,6 +110,17 @@ class CircuitBreaker:
                     self.name,
                     elapsed,
                 )
+                self._update_telemetry_gauge()
+
+    def _update_telemetry_gauge(self) -> None:
+        """Publish the current circuit breaker state to Prometheus telemetry."""
+        try:
+            from app.core.telemetry import set_circuit_breaker_metric
+
+            val = 0 if self._state == CircuitState.CLOSED else (1 if self._state == CircuitState.HALF_OPEN else 2)
+            set_circuit_breaker_metric(self.name, val)
+        except Exception:
+            pass
 
     def can_execute(self) -> bool:
         """Check whether a request is permitted to proceed.
@@ -155,6 +166,7 @@ class CircuitBreaker:
             self._state = CircuitState.CLOSED
             self._consecutive_failures = 0
             self._last_state_change = time.monotonic()
+            self._update_telemetry_gauge()
 
     def record_failure(self) -> None:
         """Record a failed execution.
@@ -187,6 +199,7 @@ class CircuitBreaker:
                         self.failure_threshold,
                         self.recovery_timeout_seconds,
                     )
+            self._update_telemetry_gauge()
 
     def release_probe(self) -> None:
         """Release an in-flight probe reservation without recording success or failure.
@@ -210,4 +223,5 @@ class CircuitBreaker:
             self._half_open_probes_inflight = 0
             self._last_state_change = time.monotonic()
             self._last_failure_time = None
+            self._update_telemetry_gauge()
             logger.info("Circuit breaker [%s] manually reset to CLOSED", self.name)
