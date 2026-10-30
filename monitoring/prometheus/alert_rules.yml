@@ -1,0 +1,46 @@
+groups:
+  - name: codesentinel_sla_alerts
+    rules:
+      - alert: HighWebhookErrorRate
+        expr: |
+          sum(rate(codesentinel_http_requests_total{endpoint=~".*webhook.*",status_code=~"5.."}[5m]))
+          /
+          sum(rate(codesentinel_http_requests_total{endpoint=~".*webhook.*"}[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GitHub Webhook ingestion 5xx error rate is above 5%"
+          description: "Over 5% of incoming webhook requests failed over the last 5 minutes. Check database connectivity or worker health."
+
+      - alert: WebhookP99LatencyBreach
+        expr: |
+          histogram_quantile(0.99, sum(rate(codesentinel_http_request_duration_seconds_bucket{endpoint=~".*webhook.*"}[5m])) by (le)) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Webhook p99 intake latency exceeds 50ms"
+          description: "Webhook intake p99 response time has breached the 50ms SLA target."
+
+      - alert: QueueBackpressureHigh
+        expr: sum(codesentinel_queue_depth) > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Durable job queue depth exceeds 50 items"
+          description: "Queue depth is {{ $value }}. Workers may be backlogged or stalled. Scale worker replicas."
+
+      - alert: CircuitBreakerTripped
+        expr: |
+          increase(codesentinel_nvidia_call_duration_seconds_count{outcome="circuit_broken"}[5m]) > 0
+          or
+          increase(codesentinel_nebius_call_duration_seconds_count{outcome="circuit_broken"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AI Provider Circuit Breaker has tripped"
+          description: "Repeated upstream failures from AI inference provider triggered the circuit breaker. Diagnosis falling back to unavailable."
+

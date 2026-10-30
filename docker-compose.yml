@@ -96,12 +96,38 @@ services:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
       - prometheus_data:/prometheus
     depends_on:
       api:
+        condition: service_healthy
+
+  db-backup:
+    image: postgres:16-alpine
+    container_name: codesentinel-backup
+    restart: unless-stopped
+    command: >
+      sh -c "
+        while true; do
+          echo '[BACKUP] Running scheduled daily backup...'
+          PGPASSWORD=$${POSTGRES_PASSWORD} pg_dump -h postgres -p 5432 -U $${POSTGRES_USER:-codesentinel} -d $${POSTGRES_DB:-codesentinel_dev} -F c -Z 6 -f /backups/backup_$$(date -u +%Y%m%d_%H%M%S).dump
+          find /backups -type f -name '*.dump' -mtime +7 -delete
+          echo '[BACKUP] Completed. Next backup in 24 hours.'
+          sleep 86400
+        done
+      "
+    volumes:
+      - backup_data:/backups
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-codesentinel}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be provided via environment}
+      - POSTGRES_DB=${POSTGRES_DB:-codesentinel_dev}
+    depends_on:
+      postgres:
         condition: service_healthy
 
 volumes:
   postgres_data:
   redis_data:
   prometheus_data:
+  backup_data:
